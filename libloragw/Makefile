@@ -1,6 +1,6 @@
 ### get external defined data
 
-LIBLORAGW_VERSION := `cat ../VERSION`
+LIBLORAGW_VERSION := "2.1.0"
 include library.cfg
 include ../target.cfg
 
@@ -24,16 +24,13 @@ LIBS := -lloragw -ltinymt32 -lrt -lm
 
 all: 	libloragw.a \
 		test_loragw_com \
-		test_loragw_i2c \
 		test_loragw_reg \
 		test_loragw_hal_tx \
 		test_loragw_hal_rx \
-		test_loragw_cal_sx125x \
 		test_loragw_capture_ram \
 		test_loragw_com_sx1250 \
 		test_loragw_com_sx1261 \
 		test_loragw_counter \
-		test_loragw_gps \
 		test_loragw_toa \
 		test_loragw_sx1261_rssi
 
@@ -100,42 +97,41 @@ $(OBJDIR)/%.o: src/%.c $(INCLUDES) inc/config.h | $(OBJDIR)
 
 ### static library
 
-libloragw.a: $(OBJDIR)/loragw_spi.o \
-			 $(OBJDIR)/loragw_usb.o \
-			 $(OBJDIR)/loragw_com.o \
+libloragw.a: $(OBJDIR)/loragw_com.o \
 			 $(OBJDIR)/loragw_mcu.o \
-			 $(OBJDIR)/loragw_i2c.o \
-			 $(OBJDIR)/sx125x_spi.o \
-			 $(OBJDIR)/sx125x_com.o \
-			 $(OBJDIR)/sx1250_spi.o \
-			 $(OBJDIR)/sx1250_usb.o \
 			 $(OBJDIR)/sx1250_com.o \
-			 $(OBJDIR)/sx1261_spi.o \
-			 $(OBJDIR)/sx1261_usb.o \
 			 $(OBJDIR)/sx1261_com.o \
 			 $(OBJDIR)/loragw_aux.o \
 			 $(OBJDIR)/loragw_reg.o \
 			 $(OBJDIR)/loragw_sx1250.o \
 			 $(OBJDIR)/loragw_sx1261.o \
-			 $(OBJDIR)/loragw_sx125x.o \
 			 $(OBJDIR)/loragw_sx1302.o \
-			 $(OBJDIR)/loragw_cal.o \
-			 $(OBJDIR)/loragw_debug.o \
 			 $(OBJDIR)/loragw_hal.o \
 			 $(OBJDIR)/loragw_lbt.o \
-			 $(OBJDIR)/loragw_stts751.o \
-			 $(OBJDIR)/loragw_gps.o \
 			 $(OBJDIR)/loragw_sx1302_timestamp.o \
 			 $(OBJDIR)/loragw_sx1302_rx.o \
-			 $(OBJDIR)/loragw_ad5338r.o
+			 $(OBJDIR)/serial_port.o
 	$(AR) rcs $@ $^
+
+libloragw.dll: $(OBJDIR)/loragw_com.o \
+			 $(OBJDIR)/loragw_mcu.o \
+			 $(OBJDIR)/sx1250_com.o \
+			 $(OBJDIR)/sx1261_com.o \
+			 $(OBJDIR)/loragw_aux.o \
+			 $(OBJDIR)/loragw_reg.o \
+			 $(OBJDIR)/loragw_sx1250.o \
+			 $(OBJDIR)/loragw_sx1261.o \
+			 $(OBJDIR)/loragw_sx1302.o \
+			 $(OBJDIR)/loragw_hal.o \
+			 $(OBJDIR)/loragw_lbt.o \
+			 $(OBJDIR)/loragw_sx1302_timestamp.o \
+			 $(OBJDIR)/loragw_sx1302_rx.o \
+			 $(OBJDIR)/serial_port.o
+	$(CC) $(CFLAGS) -shared -o $@ $^
 
 ### test programs
 
 test_loragw_com: tst/test_loragw_com.c libloragw.a
-	$(CC) $(CFLAGS) -L. -L../libtools $< -o $@ $(LIBS)
-
-test_loragw_i2c: tst/test_loragw_i2c.c libloragw.a
 	$(CC) $(CFLAGS) -L. -L../libtools $< -o $@ $(LIBS)
 
 test_loragw_reg: tst/test_loragw_reg.c libloragw.a
@@ -148,9 +144,6 @@ test_loragw_hal_rx: tst/test_loragw_hal_rx.c libloragw.a
 	$(CC) $(CFLAGS) -L. -L../libtools $< -o $@ $(LIBS)
 
 test_loragw_capture_ram: tst/test_loragw_capture_ram.c libloragw.a
-	$(CC) $(CFLAGS) -L. -L../libtools  $< -o $@ $(LIBS)
-
-test_loragw_cal_sx125x: tst/test_loragw_cal_sx125x.c libloragw.a
 	$(CC) $(CFLAGS) -L. -L../libtools  $< -o $@ $(LIBS)
 
 test_loragw_com_sx1250: tst/test_loragw_com_sx1250.c libloragw.a

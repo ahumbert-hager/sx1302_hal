@@ -51,8 +51,8 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 #define SX1302_REG_COMMON   0x5600
 #define SX1302_REG_AGC_MCU  0x5780
 
-#define COM_TYPE_DEFAULT LGW_COM_SPI
-#define COM_PATH_DEFAULT "/dev/spidev0.0"
+#define COM_TYPE_DEFAULT LGW_COM_USB
+#define COM_PATH_DEFAULT "COM5"
 
 /* -------------------------------------------------------------------------- */
 /* --- GLOBAL VARIABLES ----------------------------------------------------- */
@@ -123,29 +123,12 @@ int main(int argc, char ** argv)
     sigaction( SIGINT, &sigact, NULL );
     sigaction( SIGTERM, &sigact, NULL );
 
-    /* Board reset */
-    if (com_type == LGW_COM_SPI) {
-        if (system("./reset_lgw.sh start") != 0) {
-            printf("ERROR: failed to reset SX1302, check your reset_lgw.sh script\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-
     printf("Beginning of test for loragw_com.c\n");
-    x = lgw_com_open(com_type, com_path);
+    x = lgw_com_open(com_path);
     if (x != 0) {
         printf("ERROR: failed to open COM device %s\n", com_path);
         exit(EXIT_FAILURE);
     }
-
-    /* normal R/W test */
-    /* TODO */
-
-    /* burst R/W test, small bursts << LGW_BURST_CHUNK */
-    /* TODO */
-
-    /* burst R/W test, large bursts >> LGW_BURST_CHUNK */
-    /* TODO */
 
     x = lgw_com_r(LGW_SPI_MUX_TARGET_SX1302, SX1302_REG_COMMON + 6, &data);
     if (x != 0) {
@@ -168,7 +151,7 @@ int main(int argc, char ** argv)
     srand(time(NULL));
 
     /* Allocate buffers according to com type capabilities */
-    max_buff_size = (com_type == LGW_COM_SPI) ? BUFF_SIZE_SPI : BUFF_SIZE_USB;
+    max_buff_size =  BUFF_SIZE_USB;
     test_buff = (uint8_t*)malloc(max_buff_size * sizeof(uint8_t));
     if (test_buff == NULL) {
         printf("ERROR: failed to allocate memory for test_buff - %s\n", strerror(errno));
@@ -370,15 +353,6 @@ int main(int argc, char ** argv)
         free(read_buff);
         read_buff = NULL;
     }
-
-    if (com_type == LGW_COM_SPI) {
-        /* Board reset */
-        if (system("./reset_lgw.sh stop") != 0) {
-            printf("ERROR: failed to reset SX1302, check your reset_lgw.sh script\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-
     return 0;
 }
 

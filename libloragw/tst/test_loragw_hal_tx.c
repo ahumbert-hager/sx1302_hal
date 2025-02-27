@@ -44,7 +44,7 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE CONSTANTS ---------------------------------------------------- */
 
-#define COM_TYPE_DEFAULT LGW_COM_SPI
+#define COM_TYPE_DEFAULT LGW_COM_USB
 #define COM_PATH_DEFAULT "/dev/spidev0.0"
 
 #define DEFAULT_CLK_SRC     0
@@ -478,14 +478,6 @@ int main(int argc, char **argv)
     }
 
     for (cnt_loop = 0; cnt_loop < nb_loop; cnt_loop++) {
-        if (com_type == LGW_COM_SPI) {
-        /* Board reset */
-            if (system("./reset_lgw.sh start") != 0) {
-                printf("ERROR: failed to reset SX1302, check your reset_lgw.sh script\n");
-                exit(EXIT_FAILURE);
-            }
-        }
-
         /* connect, configure and start the LoRa concentrator */
         x = lgw_start();
         if (x != 0) {
@@ -596,14 +588,6 @@ int main(int argc, char **argv)
         x = lgw_stop();
         if (x != 0) {
             printf("ERROR: failed to stop the gateway\n");
-        }
-
-        if (com_type == LGW_COM_SPI) {
-            /* Board reset */
-            if (system("./reset_lgw.sh stop") != 0) {
-                printf("ERROR: failed to reset SX1302, check your reset_lgw.sh script\n");
-                exit(EXIT_FAILURE);
-            }
         }
     }
 

@@ -42,7 +42,6 @@ static const char sx1261_pram_version_string[] = "2D06";
 /* -------------------------------------------------------------------------- */
 /* --- PUBLIC FUNCTIONS PROTOTYPES ------------------------------------------ */
 
-int sx1261_connect(lgw_com_type_t com_type, const char *com_path);
 int sx1261_disconnect(void);
 
 int sx1261_reg_w(sx1261_op_code_t op_code, uint8_t *data, uint16_t size);

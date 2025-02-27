@@ -24,11 +24,10 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 #include <stdlib.h>     /* rand */
 #include <unistd.h>     /* lseek, close */
 #include <string.h>     /* memset */
-#include <errno.h>      /* Error number definitions */
-#include <termios.h>    /* POSIX terminal control definitions */
 
 #include "loragw_mcu.h"
 #include "loragw_aux.h"
+#include "serial_port.h"
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE MACROS ------------------------------------------------------- */
@@ -190,7 +189,7 @@ const char * spi_status_get_str(const uint8_t status) {
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-int write_req(int fd, order_id_t cmd, const uint8_t * payload, uint16_t payload_size ) {
+int write_req(order_id_t cmd, const uint8_t * payload, uint16_t payload_size ) {
     uint8_t buf_w[HEADER_CMD_SIZE];
     int n;
     /* performances variables */
@@ -214,7 +213,7 @@ int write_req(int fd, order_id_t cmd, const uint8_t * payload, uint16_t payload_
     buf_w[1] = (uint8_t)(payload_size >> 8); /* MSB */
     buf_w[2] = (uint8_t)(payload_size >> 0); /* LSB */
     buf_w[3] = cmd;
-    n = write(fd, buf_w, HEADER_CMD_SIZE);
+    n = serial_write(buf_w, HEADER_CMD_SIZE);
     if (n < 0) {
         printf("ERROR: failed to write command header to com port\n");
         return -1;
@@ -226,7 +225,7 @@ int write_req(int fd, order_id_t cmd, const uint8_t * payload, uint16_t payload_
             printf("ERROR: invalid payload\n");
             return -1;
         }
-        n = write(fd, payload, payload_size);
+        n = serial_write(payload, payload_size);
         if (n < 0) {
             printf("ERROR: failed to write command payload to com port\n");
             return -1;
@@ -257,7 +256,7 @@ int write_req(int fd, order_id_t cmd, const uint8_t * payload, uint16_t payload_
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-int read_ack(int fd, uint8_t * hdr, uint8_t * buf, size_t buf_size) {
+int read_ack(uint8_t * hdr, uint8_t * buf, size_t buf_size) {
 #if DEBUG_VERBOSE
     int i;
 #endif
@@ -275,9 +274,7 @@ int read_ack(int fd, uint8_t * hdr, uint8_t * buf, size_t buf_size) {
     _meas_time_start(&tm);
 
     /* Read message header first, handle EINTR as it is a blocking call */
-    do {
-        n = read(fd, &hdr[0], (size_t)HEADER_CMD_SIZE);
-    } while (n == -1 && errno == EINTR);
+    n = serial_read(&hdr[0], (size_t)HEADER_CMD_SIZE);
 
     if (n == -1) {
         perror("ERROR: Unable to read /dev/ttyACMx - ");
@@ -321,12 +318,10 @@ int read_ack(int fd, uint8_t * hdr, uint8_t * buf, size_t buf_size) {
     if (size > 0) {
         do {
             /* handle EINTR as it is a blocking call */
-            do {
-                n = read(fd, &buf[nb_read], size - nb_read);
-            } while (n == -1 && errno == EINTR);
+            n = serial_read(&buf[nb_read], size - nb_read);
 
             if (n == -1) {
-                perror("ERROR: Unable to read /dev/ttyACMx - ");
+                perror("ERROR: Unable to read");
                 return -1;
             } else {
 #if DEBUG_MCU == 1
@@ -541,17 +536,17 @@ int decode_ack_spi_bulk(const uint8_t * hdr, const uint8_t * payload) {
 /* -------------------------------------------------------------------------- */
 /* --- PUBLIC FUNCTIONS DEFINITION ------------------------------------------ */
 
-int mcu_ping(int fd, s_ping_info * info) {
+int mcu_ping(s_ping_info * info) {
     uint8_t buf_ack[ACK_PING_SIZE];
 
     CHECK_NULL(info);
 
-    if (write_req(fd, ORDER_ID__REQ_PING, NULL, 0) != 0) {
+    if (write_req(ORDER_ID__REQ_PING, NULL, 0) != 0) {
         printf("ERROR: failed to write PING request\n");
         return -1;
     }
 
-    if (read_ack(fd, buf_hdr, buf_ack, sizeof buf_ack) < 0) {
+    if (read_ack(buf_hdr, buf_ack, sizeof buf_ack) < 0) {
         printf("ERROR: failed to read PING ack\n");
         return -1;
     }
@@ -566,13 +561,13 @@ int mcu_ping(int fd, s_ping_info * info) {
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-int mcu_boot(int fd) {
-    if (write_req(fd, ORDER_ID__REQ_BOOTLOADER_MODE, NULL, 0) != 0) {
+int mcu_boot(void) {
+    if (write_req(ORDER_ID__REQ_BOOTLOADER_MODE, NULL, 0) != 0) {
         printf("ERROR: failed to write BOOTLOADER_MODE request\n");
         return -1;
     }
 
-    if (read_ack(fd, buf_hdr, NULL, 0) < 0) {
+    if (read_ack(buf_hdr, NULL, 0) < 0) {
         printf("ERROR: failed to read BOOTLOADER_MODE ack\n");
         return -1;
     }
@@ -587,17 +582,17 @@ int mcu_boot(int fd) {
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-int mcu_get_status(int fd, s_status * status) {
+int mcu_get_status(s_status * status) {
     uint8_t buf_ack[ACK_GET_STATUS_SIZE];
 
     CHECK_NULL(status);
 
-    if (write_req(fd, ORDER_ID__REQ_GET_STATUS, NULL, 0) != 0) {
+    if (write_req(ORDER_ID__REQ_GET_STATUS, NULL, 0) != 0) {
         printf("ERROR: failed to write GET_STATUS request\n");
         return -1;
     }
 
-    if (read_ack(fd, buf_hdr, buf_ack, sizeof buf_ack) < 0) {
+    if (read_ack(buf_hdr, buf_ack, sizeof buf_ack) < 0) {
         printf("ERROR: failed to read GET_STATUS ack\n");
         return -1;
     }
@@ -612,7 +607,7 @@ int mcu_get_status(int fd, s_status * status) {
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-int mcu_gpio_write(int fd, uint8_t gpio_port, uint8_t gpio_id, uint8_t gpio_value) {
+int mcu_gpio_write(uint8_t gpio_port, uint8_t gpio_id, uint8_t gpio_value) {
     uint8_t status;
     uint8_t buf_req[REQ_WRITE_GPIO_SIZE];
     uint8_t buf_ack[ACK_GPIO_WRITE_SIZE];
@@ -620,12 +615,12 @@ int mcu_gpio_write(int fd, uint8_t gpio_port, uint8_t gpio_id, uint8_t gpio_valu
     buf_req[REQ_WRITE_GPIO__PORT]   = gpio_port;
     buf_req[REQ_WRITE_GPIO__PIN]    = gpio_id;
     buf_req[REQ_WRITE_GPIO__STATE]  = gpio_value;
-    if (write_req(fd, ORDER_ID__REQ_WRITE_GPIO, buf_req, REQ_WRITE_GPIO_SIZE) != 0) {
+    if (write_req(ORDER_ID__REQ_WRITE_GPIO, buf_req, REQ_WRITE_GPIO_SIZE) != 0) {
         printf("ERROR: failed to write REQ_WRITE_GPIO request\n");
         return -1;
     }
 
-    if (read_ack(fd, buf_hdr, buf_ack, sizeof buf_ack) < 0) {
+    if (read_ack(buf_hdr, buf_ack, sizeof buf_ack) < 0) {
         printf("ERROR: failed to read PING ack\n");
         return -1;
     }
@@ -645,16 +640,16 @@ int mcu_gpio_write(int fd, uint8_t gpio_port, uint8_t gpio_id, uint8_t gpio_valu
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-int mcu_spi_write(int fd, uint8_t * in_out_buf, size_t buf_size) {
+int mcu_spi_write(uint8_t * in_out_buf, size_t buf_size) {
     /* Check input parameters */
     CHECK_NULL(in_out_buf);
 
-    if (write_req(fd, ORDER_ID__REQ_MULTIPLE_SPI, in_out_buf, buf_size) != 0) {
+    if (write_req(ORDER_ID__REQ_MULTIPLE_SPI, in_out_buf, buf_size) != 0) {
         printf("ERROR: failed to write REQ_MULTIPLE_SPI request\n");
         return -1;
     }
 
-    if (read_ack(fd, buf_hdr, in_out_buf, buf_size) < 0) {
+    if (read_ack(buf_hdr, in_out_buf, buf_size) < 0) {
         printf("ERROR: failed to read REQ_MULTIPLE_SPI ack\n");
         return -1;
     }
@@ -677,9 +672,9 @@ int mcu_spi_store(uint8_t * in_out_buf, size_t buf_size) {
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-int mcu_spi_flush(int fd) {
+int mcu_spi_flush(void) {
     /* Write pending SPI requests to MCU */
-    if (mcu_spi_write(fd, spi_bulk_buffer.buffer, spi_bulk_buffer.size) != 0) {
+    if (mcu_spi_write(spi_bulk_buffer.buffer, spi_bulk_buffer.size) != 0) {
         printf("ERROR: %s: failed to write SPI requests to MCU\n", __FUNCTION__);
         return -1;
     }

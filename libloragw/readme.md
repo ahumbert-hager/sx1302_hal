@@ -30,22 +30,15 @@ The library is composed of the following modules:
   * loragw_sx1302
   * loragw_sx1302_rx
   * loragw_sx1302_timestamp
-  * loragw_sx125x
   * loragw_sx1250
   * loragw_sx1261
 
 2. communication layer for sx1302
   * loragw_com
-  * loragw_spi
   * loragw_usb
-
-3. communication layer for sx1255/SX1257 radios
-  * sx125x_com
-  * sx125x_spi
 
 4. communication layer for sx1250 radios
   * sx1250_com
-  * sx1250_spi
   * sx1250_usb
 
 5. communication layer for STM32 MCU (USB)
@@ -60,7 +53,6 @@ The library is composed of the following modules:
   * loragw_i2c
   * loragw_gps
   * loragw_stts751
-  * loragw_ad5338r
 
 The library also contains basic test programs to demonstrate code use and check
 functionality.
@@ -255,11 +247,6 @@ into account the LoRa demodulation processing time.
 
 This module contains a very basic driver for the STmicroelectronics ST751
 temperature sensor which is on the CoreCell reference design.
-
-### 2.12. loragw_ad5338r
-
-This module contains a very basic driver for the Analog Devices AD5338R DAC used
-on the Semtech CN490 Full Duplex reference design to set the PA fixed gain.
 
 ### 2.13. loragw_i2c
 

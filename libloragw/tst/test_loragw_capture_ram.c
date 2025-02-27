@@ -33,7 +33,6 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 #include "loragw_reg.h"
 #include "loragw_aux.h"
 #include "loragw_sx1250.h"
-#include "loragw_sx125x.h"
 #include "loragw_sx1302.h"
 
 /* -------------------------------------------------------------------------- */
@@ -41,7 +40,7 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 
 #define DEBUG_MSG(str) fprintf(stdout, str)
 
-#define COM_TYPE_DEFAULT LGW_COM_SPI
+#define COM_TYPE_DEFAULT LGW_COM_USB
 #define COM_PATH_DEFAULT "/dev/spidev0.0"
 
 #define CAPTURE_RAM_SIZE 0x4000

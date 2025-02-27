@@ -22,9 +22,16 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 #include <stdio.h>      /* printf fprintf */
 
 #include "loragw_com.h"
-#include "loragw_usb.h"
-#include "loragw_spi.h"
 #include "loragw_aux.h"
+#include "loragw_mcu.h"
+#include "serial_port.h"
+
+#include <stdint.h>     /* C99 types */
+#include <stdbool.h>    /* bool type */
+#include <stdio.h>      /* printf fprintf */
+#include <string.h>     /* strncmp */
+
+
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE MACROS ------------------------------------------------------- */
@@ -45,339 +52,321 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE VARIABLES ---------------------------------------------------- */
+static lgw_com_write_mode_t _lgw_write_mode = LGW_COM_WRITE_MODE_SINGLE;
+static uint8_t _lgw_spi_req_nb = 0;
 
-/**
-@brief The current communication type in use (SPI, USB)
-*/
-static lgw_com_type_t _lgw_com_type = LGW_COM_UNKNOWN;
+/* -------------------------------------------------------------------------- */
+/* --- PRIVATE FUNCTIONS DEFINITION ----------------------------------------- */
 
-/**
-@brief A generic pointer to the COM device (file descriptor)
-*/
-static void* _lgw_com_target = NULL;
 
 /* -------------------------------------------------------------------------- */
 /* --- PUBLIC FUNCTIONS DEFINITION ------------------------------------------ */
 
-int lgw_com_open(lgw_com_type_t com_type, const char * com_path) {
-    int com_stat;
+int lgw_com_open(const char * com_path) {
+    int x;
+    s_ping_info gw_info;
+    s_status mcu_status;
 
-    /* Check input parameters */
-    CHECK_NULL(com_path);
-    if ((com_type != LGW_COM_SPI) && (com_type != LGW_COM_USB)) {
-        DEBUG_MSG("ERROR: COMMUNICATION INTERFACE TYPE IS NOT SUPPORTED\n");
-        return LGW_COM_ERROR;
-    }
-
-    if (_lgw_com_target != NULL) {
+    if (serial_isopen() != 0) {
         DEBUG_MSG("WARNING: CONCENTRATOR WAS ALREADY CONNECTED\n");
         lgw_com_close();
     }
 
-    /* set current com type */
-    _lgw_com_type = com_type;
-
-    switch (com_type) {
-        case LGW_COM_SPI:
-            printf("Opening SPI communication interface\n");
-            com_stat = lgw_spi_open(com_path, &_lgw_com_target);
-            break;
-        case LGW_COM_USB:
-            printf("Opening USB communication interface\n");
-            com_stat = lgw_usb_open(com_path, &_lgw_com_target);
-            break;
-        default:
-            com_stat = LGW_COM_ERROR;
-            break;
+    x = serial_open(com_path);
+    if (x != 0) {
+        printf("ERROR: failed to open the port\n");
+        return LGW_COM_ERROR;
     }
 
-    return com_stat;
+    /* Initialize pseudo-random generator for MCU request ID */
+    srand(0);
+
+    /* Check MCU version (ignore first char of the received version (release/debug) */
+    printf("INFO: Connect to MCU\n");
+    if (mcu_ping(&gw_info) != 0) {
+        printf("ERROR: failed to ping the concentrator MCU\n");
+        return LGW_COM_ERROR;
+    }
+    if (strncmp(gw_info.version + 1, mcu_version_string, sizeof mcu_version_string) != 0) {
+        printf("WARNING: MCU version mismatch (expected:%s, got:%s)\n", mcu_version_string, gw_info.version);
+    }
+    printf("INFO: Concentrator MCU version is %s\n", gw_info.version);
+
+    /* Get MCU status */
+    if (mcu_get_status( &mcu_status) != 0) {
+        printf("ERROR: failed to get status from the concentrator MCU\n");
+        return LGW_COM_ERROR;
+    }
+    printf("INFO: MCU status: sys_time:%u temperature:%.1foC\n", mcu_status.system_time_ms, mcu_status.temperature);
+
+    /* Reset SX1302 */
+    x  = mcu_gpio_write(0, 1, 1); /*   set PA1 : POWER_EN */
+    x |= mcu_gpio_write(0, 2, 1); /*   set PA2 : SX1302_RESET active */
+    x |= mcu_gpio_write(0, 2, 0); /* unset PA2 : SX1302_RESET inactive */
+    /* Reset SX1261 (LBT / Spectral Scan) */
+    x |= mcu_gpio_write(0, 8, 0); /*   set PA8 : SX1261_NRESET active */
+    x |= mcu_gpio_write(0, 8, 1); /* unset PA8 : SX1261_NRESET inactive */
+    if (x != 0) {
+        printf("ERROR: failed to reset SX1302\n");
+        return LGW_COM_ERROR;
+    }
+
+    return LGW_COM_SUCCESS;
 }
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 /* SPI release */
 int lgw_com_close(void) {
-    int com_stat;
-
-    if (_lgw_com_target == NULL) {
+    if (serial_isopen() != 0) {
         printf("ERROR: concentrator is not connected\n");
         return -1;
     }
 
-    switch (_lgw_com_type) {
-        case LGW_COM_SPI:
-            printf("Closing SPI communication interface\n");
-            com_stat = lgw_spi_close(_lgw_com_target);
-            break;
-        case LGW_COM_USB:
-            printf("Closing USB communication interface\n");
-            com_stat = lgw_usb_close(_lgw_com_target);
-            break;
-        default:
-            printf("ERROR(%s:%d): wrong communication type (SHOULD NOT HAPPEN)\n", __FUNCTION__, __LINE__);
-            com_stat = LGW_COM_ERROR;
-            break;
+    int x, err = LGW_COM_SUCCESS;
+
+    /* Reset SX1302 before closing */
+    x  = mcu_gpio_write(0, 1, 1); /*   set PA1 : POWER_EN */
+    x |= mcu_gpio_write(0, 2, 1); /*   set PA2 : SX1302_RESET active */
+    x |= mcu_gpio_write(0, 2, 0); /* unset PA2 : SX1302_RESET inactive */
+    /* Reset SX1261 (LBT / Spectral Scan) */
+    x |= mcu_gpio_write(0, 8, 0); /*   set PA8 : SX1261_NRESET active */
+    x |= mcu_gpio_write(0, 8, 1); /* unset PA8 : SX1261_NRESET inactive */
+    if (x != 0) {
+        printf("ERROR: failed to reset SX1302\n");
+        err = LGW_COM_ERROR;
     }
 
-    _lgw_com_target = NULL;
+    /* close file & deallocate file descriptor */
+    x = serial_close();
+    if (x != 0) {
+        printf("ERROR: failed to close USB file\n");
+        err = LGW_COM_ERROR;
+    }
 
-    return com_stat;
+    /* determine return code */
+    if (err != 0) {
+        printf("ERROR: USB PORT FAILED TO CLOSE\n");
+        return LGW_COM_ERROR;
+    } else {
+        DEBUG_MSG("Note: USB port closed\n");
+        return LGW_COM_SUCCESS;
+    }
 }
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 /* Simple write */
 int lgw_com_w(uint8_t spi_mux_target, uint16_t address, uint8_t data) {
-    int com_stat;
-    /* performances variables */
-    struct timeval tm;
-
-    /* Record function start time */
-    _meas_time_start(&tm);
-
-    /* Check input parameters */
-    CHECK_NULL(_lgw_com_target);
-
-    switch (_lgw_com_type) {
-        case LGW_COM_SPI:
-            com_stat = lgw_spi_w(_lgw_com_target, spi_mux_target, address, data);
-            break;
-        case LGW_COM_USB:
-            com_stat = lgw_usb_w(_lgw_com_target, spi_mux_target, address, data);
-            break;
-        default:
-            printf("ERROR(%s:%d): wrong communication type (SHOULD NOT HAPPEN)\n", __FUNCTION__, __LINE__);
-            com_stat = LGW_COM_ERROR;
-            break;
-    }
-
-    /* Compute time spent in this function */
-    _meas_time_stop(5, tm, __FUNCTION__);
-
-    return com_stat;
+    return lgw_com_wb(spi_mux_target, address, &data, 1);
 }
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 /* Simple read */
 int lgw_com_r(uint8_t spi_mux_target, uint16_t address, uint8_t *data) {
-    int com_stat;
-    /* performances variables */
-    struct timeval tm;
-
-    /* Record function start time */
-    _meas_time_start(&tm);
-
     /* Check input parameters */
-    CHECK_NULL(_lgw_com_target);
     CHECK_NULL(data);
-
-    switch (_lgw_com_type) {
-        case LGW_COM_SPI:
-            com_stat = lgw_spi_r(_lgw_com_target, spi_mux_target, address, data);
-            break;
-        case LGW_COM_USB:
-            com_stat = lgw_usb_r(_lgw_com_target, spi_mux_target, address, data);
-            break;
-        default:
-            printf("ERROR(%s:%d): wrong communication type (SHOULD NOT HAPPEN)\n", __FUNCTION__, __LINE__);
-            com_stat = LGW_COM_ERROR;
-            break;
-    }
-
-    /* Compute time spent in this function */
-    _meas_time_stop(5, tm, __FUNCTION__);
-
-    return com_stat;
+    return lgw_com_rb(spi_mux_target, address, data, 1);
 }
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 int lgw_com_rmw(uint8_t spi_mux_target, uint16_t address, uint8_t offs, uint8_t leng, uint8_t data) {
-    int com_stat;
-    /* performances variables */
-    struct timeval tm;
 
-    /* Record function start time */
-    _meas_time_start(&tm);
+    uint8_t command_size = 6;
+    uint8_t in_out_buf[command_size];
+    int a = 0;
 
-    /* Check input parameters */
-    CHECK_NULL(_lgw_com_target);
 
-    switch (_lgw_com_type) {
-        case LGW_COM_SPI:
-            com_stat = lgw_spi_rmw(_lgw_com_target, spi_mux_target, address, offs, leng, data);
-            break;
-        case LGW_COM_USB:
-            com_stat = lgw_usb_rmw(_lgw_com_target, address, offs, leng, data);
-            break;
-        default:
-            printf("ERROR(%s:%d): wrong communication type (SHOULD NOT HAPPEN)\n", __FUNCTION__, __LINE__);
-            com_stat = LGW_COM_ERROR;
-            break;
+    DEBUG_PRINTF("==> RMW register @ 0x%04X, offs:%u leng:%u value:0x%02X\n", address, offs, leng, data);
+
+    /* prepare frame to be sent */
+    in_out_buf[0] = _lgw_spi_req_nb; /* Req ID */
+    in_out_buf[1] = MCU_SPI_REQ_TYPE_READ_MODIFY_WRITE; /* Req type */
+    in_out_buf[2] = (uint8_t)(address >> 8); /* Register address MSB */
+    in_out_buf[3] = (uint8_t)(address >> 0); /* Register address LSB */
+    in_out_buf[4] = ((1 << leng) - 1) << offs; /* Register bitmask */
+    in_out_buf[5] = data << offs;
+
+    if (_lgw_write_mode == LGW_COM_WRITE_MODE_BULK) {
+        a = mcu_spi_store(in_out_buf, command_size);
+        _lgw_spi_req_nb += 1;
+    } else {
+        a = mcu_spi_write( in_out_buf, command_size);
     }
 
-    /* Compute time spent in this function */
-    _meas_time_stop(5, tm, __FUNCTION__);
-
-    return com_stat;
+    /* determine return code */
+    if (a != 0) {
+        DEBUG_MSG("ERROR: USB WRITE FAILURE\n");
+        return -1;
+    } else {
+        DEBUG_MSG("Note: USB write success\n");
+        return 0;
+    }
 }
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 /* Burst (multiple-byte) write */
 int lgw_com_wb(uint8_t spi_mux_target, uint16_t address, const uint8_t *data, uint16_t size) {
-    int com_stat;
-    /* performances variables */
-    struct timeval tm;
-
-    /* Record function start time */
-    _meas_time_start(&tm);
 
     /* Check input parameters */
-    CHECK_NULL(_lgw_com_target);
     CHECK_NULL(data);
 
-    switch (_lgw_com_type) {
-        case LGW_COM_SPI:
-            com_stat = lgw_spi_wb(_lgw_com_target, spi_mux_target, address, data, size);
-            break;
-        case LGW_COM_USB:
-            com_stat = lgw_usb_wb(_lgw_com_target, spi_mux_target, address, data, size);
-            break;
-        default:
-            printf("ERROR(%s:%d): wrong communication type (SHOULD NOT HAPPEN)\n", __FUNCTION__, __LINE__);
-            com_stat = LGW_COM_ERROR;
-            break;
+    uint16_t command_size = size + 8; /* 5 bytes: REQ metadata (MCU), 3 bytes: SPI header (SX1302) */
+    uint8_t in_out_buf[command_size];
+    int i;
+    int a = 0;
+
+    /* prepare command */
+    /* Request metadata */
+    in_out_buf[0] = _lgw_spi_req_nb; /* Req ID */
+    in_out_buf[1] = MCU_SPI_REQ_TYPE_READ_WRITE; /* Req type */
+    in_out_buf[2] = MCU_SPI_TARGET_SX1302; /* MCU -> SX1302 */
+    in_out_buf[3] = (uint8_t)((size + 3) >> 8); /* payload size + spi_mux_target + address */
+    in_out_buf[4] = (uint8_t)((size + 3) >> 0); /* payload size + spi_mux_target + address */
+    /* RAW SPI frame */
+    in_out_buf[5] = spi_mux_target; /* SX1302 -> RADIO_A or RADIO_B */
+    in_out_buf[6] = 0x80 | ((address >> 8) & 0x7F);
+    in_out_buf[7] =        ((address >> 0) & 0xFF);
+    for (i = 0; i < size; i++) {
+        in_out_buf[i + 8] = data[i];
     }
 
-    /* Compute time spent in this function */
-    _meas_time_stop(5, tm, __FUNCTION__);
+    if (_lgw_write_mode == LGW_COM_WRITE_MODE_BULK) {
+        a = mcu_spi_store(in_out_buf, command_size);
+        _lgw_spi_req_nb += 1;
+    } else {
+        a = mcu_spi_write(in_out_buf, command_size);
+    }
 
-    return com_stat;
+    /* determine return code */
+    if (a != 0) {
+        DEBUG_MSG("ERROR: USB WRITE BURST FAILURE\n");
+        return -1;
+    } else {
+        DEBUG_MSG("Note: USB write burst success\n");
+        return 0;
+    }
 }
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 /* Burst (multiple-byte) read */
 int lgw_com_rb(uint8_t spi_mux_target, uint16_t address, uint8_t *data, uint16_t size) {
-    int com_stat;
-    /* performances variables */
-    struct timeval tm;
-
-    /* Record function start time */
-    _meas_time_start(&tm);
-
     /* Check input parameters */
-    CHECK_NULL(_lgw_com_target);
     CHECK_NULL(data);
 
-    switch (_lgw_com_type) {
-        case LGW_COM_SPI:
-            com_stat = lgw_spi_rb(_lgw_com_target, spi_mux_target, address, data, size);
-            break;
-        case LGW_COM_USB:
-            com_stat = lgw_usb_rb(_lgw_com_target, spi_mux_target, address, data, size);
-            break;
-        default:
-            printf("ERROR(%s:%d): wrong communication type (SHOULD NOT HAPPEN)\n", __FUNCTION__, __LINE__);
-            com_stat = LGW_COM_ERROR;
-            break;
+    uint16_t command_size = size + 9;  /* 5 bytes: REQ metadata (MCU), 3 bytes: SPI header (SX1302), 1 byte: dummy*/
+    uint8_t in_out_buf[command_size];
+    int i;
+    int a = 0;
+
+    /* prepare command */
+    /* Request metadata */
+    in_out_buf[0] = 0; /* Req ID */
+    in_out_buf[1] = MCU_SPI_REQ_TYPE_READ_WRITE; /* Req type */
+    in_out_buf[2] = MCU_SPI_TARGET_SX1302; /* MCU -> SX1302 */
+    in_out_buf[3] = (uint8_t)((size + 4) >> 8); /* payload size + spi_mux_target + address + dummy byte */
+    in_out_buf[4] = (uint8_t)((size + 4) >> 0); /* payload size + spi_mux_target + address + dummy byte */
+    /* RAW SPI frame */
+    in_out_buf[5] = spi_mux_target; /* SX1302 -> RADIO_A or RADIO_B */
+    in_out_buf[6] = 0x00 | ((address >> 8) & 0x7F);
+    in_out_buf[7] =        ((address >> 0) & 0xFF);
+    in_out_buf[8] = 0x00; /* dummy byte */
+    for (i = 0; i < size; i++) {
+        in_out_buf[i + 9] = data[i];
     }
 
-    /* Compute time spent in this function */
-    _meas_time_stop(5, tm, __FUNCTION__);
+    if (_lgw_write_mode == LGW_COM_WRITE_MODE_BULK) {
+        /* makes no sense to read in bulk mode, as we can't get the result */
+        printf("ERROR: USB READ BURST FAILURE - bulk mode is enabled\n");
+        return -1;
+    } else {
+        a = mcu_spi_write(in_out_buf, command_size);
+    }
 
-    return com_stat;
+    /* determine return code */
+    if (a != 0) {
+        DEBUG_MSG("ERROR: USB READ BURST FAILURE\n");
+        return -1;
+    } else {
+        DEBUG_MSG("Note: USB read burst success\n");
+        memcpy(data, in_out_buf + 9, size); /* remove the first bytes, keep only the payload */
+        return 0;
+    }
+
+
 }
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 int lgw_com_set_write_mode(lgw_com_write_mode_t write_mode) {
-    int com_stat = LGW_COM_SUCCESS;
-
-    switch (_lgw_com_type) {
-        case LGW_COM_SPI:
-            /* Do nothing: only single mode is supported on SPI */
-            break;
-        case LGW_COM_USB:
-            com_stat = lgw_usb_set_write_mode(write_mode);
-            break;
-        default:
-            printf("ERROR(%s:%d): wrong communication type (SHOULD NOT HAPPEN)\n", __FUNCTION__, __LINE__);
-            com_stat = LGW_COM_ERROR;
-            break;
+    if (write_mode >= LGW_COM_WRITE_MODE_UNKNOWN) {
+        printf("ERROR: wrong write mode\n");
+        return -1;
     }
 
-    return com_stat;
+    DEBUG_PRINTF("INFO: setting USB write mode to %s\n", (write_mode == LGW_COM_WRITE_MODE_SINGLE) ? "SINGLE" : "BULK");
+
+    _lgw_write_mode = write_mode;
+
+    return 0;
 }
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 int lgw_com_flush(void) {
-    int com_stat = LGW_COM_SUCCESS;
-
-    switch (_lgw_com_type) {
-        case LGW_COM_SPI:
-            /* Do nothing: only single mode is supported on SPI */
-            break;
-        case LGW_COM_USB:
-            com_stat = lgw_usb_flush(_lgw_com_target);
-            break;
-        default:
-            printf("ERROR(%s:%d): wrong communication type (SHOULD NOT HAPPEN)\n", __FUNCTION__, __LINE__);
-            com_stat = LGW_COM_ERROR;
-            break;
+    int a = 0;
+    if (_lgw_write_mode != LGW_COM_WRITE_MODE_BULK) {
+        printf("ERROR: %s: cannot flush in single write mode\n", __FUNCTION__);
+        return -1;
     }
 
-    return com_stat;
+    /* Restore single mode after flushing */
+    _lgw_write_mode = LGW_COM_WRITE_MODE_SINGLE;
+
+    if (_lgw_spi_req_nb == 0) {
+        printf("INFO: no SPI request to flush\n");
+        return 0;
+    }
+
+
+    DEBUG_MSG("INFO: flushing USB write buffer\n");
+    a = mcu_spi_flush();
+    if (a != 0) {
+        printf("ERROR: Failed to flush USB write buffer\n");
+    }
+
+    /* reset the pending request number */
+    _lgw_spi_req_nb = 0;
+
+    return a;
 }
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 uint16_t lgw_com_chunk_size(void) {
-    switch (_lgw_com_type) {
-        case LGW_COM_SPI:
-            return lgw_spi_chunk_size();
-        case LGW_COM_USB:
-            return lgw_usb_chunk_size();
-            break;
-        default:
-            printf("ERROR(%s:%d): wrong communication type (SHOULD NOT HAPPEN)\n", __FUNCTION__, __LINE__);
-            return 0;
-    }
+    return (uint16_t)LGW_USB_BURST_CHUNK;
 }
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 int lgw_com_get_temperature(float * temperature) {
     /* Check input parameters */
-    CHECK_NULL(_lgw_com_target);
     CHECK_NULL(temperature);
+    s_status mcu_status;
 
-    switch (_lgw_com_type) {
-        case LGW_COM_SPI:
-            printf("ERROR(%s:%d): not supported for SPI com\n", __FUNCTION__, __LINE__);
-            return -1;
-        case LGW_COM_USB:
-            return lgw_usb_get_temperature(_lgw_com_target, temperature);
-        default:
-            printf("ERROR(%s:%d): wrong communication type (SHOULD NOT HAPPEN)\n", __FUNCTION__, __LINE__);
-            return LGW_COM_ERROR;
+    if (mcu_get_status(&mcu_status) != 0) {
+        printf("ERROR: failed to get status from the concentrator MCU\n");
+        return -1;
     }
-}
+    DEBUG_PRINTF("INFO: temperature:%.1foC\n", mcu_status.temperature);
 
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+    *temperature = mcu_status.temperature;
 
-void* lgw_com_target(void) {
-    return _lgw_com_target;
-}
-
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
-lgw_com_type_t lgw_com_type(void) {
-    return _lgw_com_type;
+    return 0;
 }
 
 /* --- EOF ------------------------------------------------------------------ */

@@ -44,7 +44,7 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 
 #define BUFF_SIZE           16
 
-#define COM_TYPE_DEFAULT    LGW_COM_SPI
+#define COM_TYPE_DEFAULT    LGW_COM_USB
 #define COM_PATH_DEFAULT    "/dev/spidev0.0"
 #define SX1261_PATH_DEFAULT "/dev/spidev0.1"
 
@@ -113,26 +113,10 @@ int main(int argc, char ** argv)
     sigaction( SIGINT, &sigact, NULL );
     sigaction( SIGTERM, &sigact, NULL );
 
-
-    /* Board reset */
-    if (com_type == LGW_COM_SPI) {
-        if (system("./reset_lgw.sh start") != 0) {
-            printf("ERROR: failed to reset SX1302, check your reset_lgw.sh script\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-
     /* Connect to the concentrator board */
     x = lgw_connect(com_type, com_path);
     if (x != LGW_REG_SUCCESS) {
         printf("ERROR: Failed to connect to the concentrator using COM %s\n", com_path);
-        return EXIT_FAILURE;
-    }
-
-    /* Connect to the sx1261 radio */
-    x = sx1261_connect(com_type, SX1261_PATH_DEFAULT);
-    if (x != LGW_REG_SUCCESS) {
-        printf("ERROR: Failed to connect to the sx1261 using COM %s\n", com_path);
         return EXIT_FAILURE;
     }
 
@@ -184,21 +168,10 @@ int main(int argc, char ** argv)
         }
     }
 
-    /* Disconnect from the sx1261 radio */
-    sx1261_disconnect();
-
     /* Disconnect from the concentrator board */
     lgw_disconnect();
 
     printf("End of test for loragw_spi_sx1261.c\n");
-
-    if (com_type == LGW_COM_SPI) {
-        /* Board reset */
-        if (system("./reset_lgw.sh stop") != 0) {
-            printf("ERROR: failed to reset SX1302, check your reset_lgw.sh script\n");
-            exit(EXIT_FAILURE);
-        }
-    }
 
     return 0;
 }
@@ -217,11 +190,8 @@ static void sig_handler(int sigio) {
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 static void exit_failure() {
-    sx1261_disconnect();
     lgw_disconnect();
-
     printf("End of test for loragw_spi_sx1261.c\n");
-
     exit(EXIT_FAILURE);
 }
 

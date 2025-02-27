@@ -22,7 +22,6 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 #include <string.h>     /* strncmp */
 
 #include "loragw_sx1261.h"
-#include "loragw_spi.h"
 #include "loragw_com.h"
 #include "loragw_aux.h"
 #include "loragw_reg.h"
@@ -140,22 +139,6 @@ const char * get_scan_status_str(const lgw_spectral_scan_status_t status) {
 
 /* -------------------------------------------------------------------------- */
 /* --- PUBLIC FUNCTIONS DEFINITION ------------------------------------------ */
-
-int sx1261_connect(lgw_com_type_t com_type, const char *com_path) {
-    if (com_type == LGW_COM_SPI && com_path == NULL) {
-        printf("ERROR: %s: unspecified COM path to connect to sx1261 radio\n", __FUNCTION__);
-        return LGW_REG_ERROR;
-    }
-    return sx1261_com_open(com_type, com_path);
-}
-
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
-int sx1261_disconnect(void) {
-    return sx1261_com_close();
-}
-
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 int sx1261_reg_w(sx1261_op_code_t op_code, uint8_t *data, uint16_t size) {
     int com_stat;

@@ -45,7 +45,7 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 
 #define BUFF_SIZE           16
 
-#define COM_TYPE_DEFAULT    LGW_COM_SPI
+#define COM_TYPE_DEFAULT    LGW_COM_USB
 #define COM_PATH_DEFAULT    "/dev/spidev0.0"
 
 /* -------------------------------------------------------------------------- */
@@ -112,15 +112,6 @@ int main(int argc, char ** argv)
     sigaction( SIGQUIT, &sigact, NULL );
     sigaction( SIGINT, &sigact, NULL );
     sigaction( SIGTERM, &sigact, NULL );
-
-
-    /* Board reset */
-    if (com_type == LGW_COM_SPI) {
-        if (system("./reset_lgw.sh start") != 0) {
-            printf("ERROR: failed to reset SX1302, check your reset_lgw.sh script\n");
-            exit(EXIT_FAILURE);
-        }
-    }
 
     x = lgw_connect(com_type, com_path);
     if (x != LGW_REG_SUCCESS) {
@@ -207,15 +198,6 @@ int main(int argc, char ** argv)
 
     lgw_disconnect();
     printf("End of test for loragw_spi_sx1250.c\n");
-
-    if (com_type == LGW_COM_SPI) {
-        /* Board reset */
-        if (system("./reset_lgw.sh stop") != 0) {
-            printf("ERROR: failed to reset SX1302, check your reset_lgw.sh script\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-
     return 0;
 }
 

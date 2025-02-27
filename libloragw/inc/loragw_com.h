@@ -39,7 +39,6 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 /* --- PUBLIC TYPES --------------------------------------------------------- */
 
 typedef enum com_type_e {
-    LGW_COM_SPI,
     LGW_COM_USB,
     LGW_COM_UNKNOWN
 } lgw_com_type_t;
@@ -56,7 +55,7 @@ typedef enum com_write_mode_e {
 /**
  *
 */
-int lgw_com_open(lgw_com_type_t com_type, const char *com_path);
+int lgw_com_open(const char *com_path);
 
 /**
  *
@@ -107,16 +106,6 @@ uint16_t lgw_com_chunk_size(void);
  *
  **/
 int lgw_com_get_temperature(float * temperature);
-
-/**
- *
- **/
-void* lgw_com_target(void);
-
-/**
- *
- **/
-lgw_com_type_t lgw_com_type(void);
 
 #endif
 

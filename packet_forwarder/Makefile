@@ -20,7 +20,7 @@ INCLUDES = $(wildcard inc/*.h)
 # must get library build option to know if mpsse must be linked or not
 
 include $(LGW_PATH)/library.cfg
-RELEASE_VERSION := `cat ../VERSION`
+RELEASE_VERSION := 2.1.0
 
 ### Constant symbols
 

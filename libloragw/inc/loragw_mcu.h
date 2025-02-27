@@ -152,22 +152,22 @@ typedef struct {
 /**
  *
 */
-int mcu_ping(int fd, s_ping_info * info);
+int mcu_ping(s_ping_info * info);
 
 /**
  *
 */
-int mcu_boot(int fd);
+int mcu_boot(void);
 
 /**
  *
 */
-int mcu_get_status(int fd, s_status * status);
+int mcu_get_status(s_status * status);
 
 /**
  *
 */
-int mcu_gpio_write(int fd, uint8_t gpio_port, uint8_t gpio_id, uint8_t gpio_value);
+int mcu_gpio_write(uint8_t gpio_port, uint8_t gpio_id, uint8_t gpio_value);
 
 /**
 @brief Send a SX1302 read/write SPI request to the MCU
@@ -178,7 +178,7 @@ SPI answer when the function exits.
 @param buf_size The size of the given input/output buffer
 @return 0 for SUCCESS, -1 for failure
 */
-int mcu_spi_write(int fd, uint8_t * in_out_buf, size_t buf_size);
+int mcu_spi_write(uint8_t * in_out_buf, size_t buf_size);
 
 /**
  *
@@ -188,7 +188,7 @@ int mcu_spi_store(uint8_t * in_out_buf, size_t buf_size);
 /**
  *
 */
-int mcu_spi_flush(int fd);
+int mcu_spi_flush(void);
 
 #endif
 

@@ -76,24 +76,18 @@ static struct timestamp_pps_history_s timestamp_pps_history = {
 /* --- PRIVATE FUNCTIONS DECLARATION ---------------------------------------- */
 
 /**
-@brief TODO
-@param TODO
-@return The correction to be applied to the packet timestamp, in microseconds
+Returns the correction to be applied to the packet timestamp, in microseconds
 */
 int32_t legacy_timestamp_correction(uint8_t bandwidth, uint8_t datarate, uint8_t coderate, bool no_crc, uint8_t payload_length, sx1302_rx_dft_peak_mode_t dft_peak_mode);
 
 /**
-@brief TODO
-@param TODO
-@return The correction to be applied to the packet timestamp, in microseconds
+Returns the correction to be applied to the packet timestamp, in microseconds
 */
 int32_t precision_timestamp_correction(uint8_t bandwidth, uint8_t datarate, uint8_t coderate, bool crc_en, uint8_t payload_length);
 
 
 /**
-@brief TODO
-@param TODO
-@return The correction to be applied to the packet timestamp, in microseconds
+Returns the correction to be applied to the packet timestamp, in microseconds
 */
 void timestamp_pps_history_save(uint32_t timestamp_pps_reg);
 
@@ -273,14 +267,6 @@ void timestamp_pps_history_save(uint32_t timestamp_pps_reg) {
         if (timestamp_pps_history.size < MAX_TIMESTAMP_PPS_HISTORY) {
             timestamp_pps_history.size += 1;
         }
-
-#if 0
-        printf("---- timestamp PPS history (idx:%u size:%u) ----\n",  timestamp_pps_history.idx,  timestamp_pps_history.size);
-        for (int i = 0; i < timestamp_pps_history.size; i++) {
-            printf("  %u\n", timestamp_pps_history.history[i]);
-        }
-        printf("--------------------------------\n");
-#endif
     }
 }
 
@@ -381,15 +367,6 @@ uint32_t timestamp_counter_expand(timestamp_counter_t * self, bool pps, uint32_t
     uint32_t counter_us_32bits;
 
     counter_us_32bits = (tinfo->counter_us_27bits_wrap << 27) | cnt_us;
-
-#if 0
-    /* DEBUG: to be enabled when running test_loragw_counter test application
-       This generates a CSV log, and can be plotted with gnuplot:
-        > set datafile separator comma
-        > plot for [col=1:2:1] 'log_count.txt' using col with lines
-    */
-    printf("%u,%u,%u\n", cnt_us, counter_us_32bits, tinfo->counter_us_27bits_wrap);
-#endif
 
     return counter_us_32bits;
 }
@@ -527,15 +504,6 @@ int precise_timestamp_calculate(uint8_t ts_metrics_nb, const int8_t * ts_metrics
             ts_metrics_nb_clipped = MIN(32, ts_metrics_nb);
             break;
     }
-
-#if 0
-    printf("%s\n", __FUNCTION__);
-    printf("ts_metrics_nb_clipped*2: %u\n", ts_metrics_nb_clipped * 2);
-    for (i = 0; i < (2 * ts_metrics_nb_clipped); i++) {
-        printf("%d ", ts_metrics[i]);
-    }
-    printf("\n");
-#endif
 
     /* Compute the ftime cumulative sum */
     ftime[0] = (int32_t)ts_metrics[0];

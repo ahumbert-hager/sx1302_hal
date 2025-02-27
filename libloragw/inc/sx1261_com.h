@@ -41,11 +41,6 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 /**
  *
 */
-int sx1261_com_open(lgw_com_type_t com_type, const char *com_path);
-
-/**
- *
-*/
 int sx1261_com_close(void);
 
 /**

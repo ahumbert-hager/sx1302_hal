@@ -31,8 +31,6 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 #include "loragw_sx1302_rx.h"
 #include "loragw_sx1250.h"
 #include "loragw_agc_params.h"
-#include "loragw_cal.h"
-#include "loragw_debug.h"
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE MACROS ------------------------------------------------------- */
@@ -117,9 +115,6 @@ const uint8_t ifmod_config[LGW_IF_CHAIN_NB] = LGW_IFMODEM_CONFIG;
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE VARIABLES ---------------------------------------------------- */
-
-/* Radio calibration firmware */
-#include "cal_fw.var" /* text_cal_sx1257_16_Nov_1 */
 
 /* Buffer to hold RX data */
 rx_buffer_t rx_buffer;
@@ -535,33 +530,17 @@ int sx1302_radio_calibrate(struct lgw_conf_rxrf_s * context_rf_chain, uint8_t cl
     err |= lgw_reg_w(SX1302_REG_AGC_MCU_RF_EN_A_PA_EN, 0);
     err |= lgw_reg_w(SX1302_REG_AGC_MCU_RF_EN_A_LNA_EN, 0);
     /* -- Start calibration */
-    if ((context_rf_chain[clksrc].type == LGW_RADIO_TYPE_SX1257) ||
-        (context_rf_chain[clksrc].type == LGW_RADIO_TYPE_SX1255)) {
-        DEBUG_MSG("Loading CAL fw for sx125x\n");
-        err = sx1302_agc_load_firmware(cal_firmware_sx125x);
-        if (err != LGW_REG_SUCCESS) {
-            printf("ERROR: Failed to load calibration fw\n");
-            return LGW_REG_ERROR;
-        }
-        err = sx1302_cal_start(FW_VERSION_CAL, context_rf_chain, txgain_lut);
-        if (err != LGW_REG_SUCCESS) {
-            printf("ERROR: radio calibration failed\n");
-            sx1302_radio_reset(0, context_rf_chain[0].type);
-            sx1302_radio_reset(1, context_rf_chain[1].type);
-            return LGW_REG_ERROR;
-        }
-    } else {
-        DEBUG_MSG("Calibrating sx1250 radios\n");
-        for (i = 0; i < LGW_RF_CHAIN_NB; i++) {
-            if (context_rf_chain[i].enable == true) {
-                err = sx1250_calibrate(i, context_rf_chain[i].freq_hz);
-                if (err != LGW_REG_SUCCESS) {
-                    printf("ERROR: radio calibration failed\n");
-                    return LGW_REG_ERROR;
-                }
+    DEBUG_MSG("Calibrating sx1250 radios\n");
+    for (i = 0; i < LGW_RF_CHAIN_NB; i++) {
+        if (context_rf_chain[i].enable == true) {
+            err = sx1250_calibrate(i, context_rf_chain[i].freq_hz);
+            if (err != LGW_REG_SUCCESS) {
+                printf("ERROR: radio calibration failed\n");
+                return LGW_REG_ERROR;
             }
         }
     }
+    
     /* -- Release control over FE */
     err |= lgw_reg_w(SX1302_REG_AGC_MCU_CTRL_FORCE_HOST_FE_CTRL, 0);
 
@@ -1972,7 +1951,6 @@ int sx1302_parse(lgw_context_t * context, struct lgw_pkt_rx_s * p) {
                         printf("ERROR: Payload CRC16 check failed (got:0x%04X calc:0x%04X)\n", pkt.rx_crc16_value, payload_crc16_calc);
                         if (log_file != NULL) {
                             fprintf(log_file, "ERROR: Payload CRC16 check failed (got:0x%04X calc:0x%04X)\n", pkt.rx_crc16_value, payload_crc16_calc);
-                            dbg_log_buffer_to_file(log_file, rx_buffer.buffer, rx_buffer.buffer_size);
                         }
                         return LGW_REG_ERROR;
                     } else {

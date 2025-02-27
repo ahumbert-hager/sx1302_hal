@@ -43,7 +43,7 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE CONSTANTS ---------------------------------------------------- */
 
-#define COM_TYPE_DEFAULT    LGW_COM_SPI
+#define COM_TYPE_DEFAULT    LGW_COM_USB
 #define COM_PATH_DEFAULT    "/dev/spidev0.0"
 #define SX1261_PATH_DEFAULT "/dev/spidev0.1"
 
@@ -213,14 +213,6 @@ int main(int argc, char **argv)
     printf("== Spectral Scan: freq_hz=%uHz, nb_channels=%u, nb_scan=%u, rssi_offset=%ddB\n", freq_hz, nb_channels, nb_scan, rssi_offset);
     printf("==\n");
 
-    if (com_type == LGW_COM_SPI) {
-        /* Board reset */
-        if (system("./reset_lgw.sh start") != 0) {
-            printf("ERROR: failed to reset SX1302, check your reset_lgw.sh script\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-
     /* Configure the gateway */
     memset(&boardconf, 0, sizeof boardconf);
     boardconf.lorawan_public = true;
@@ -352,15 +344,6 @@ int main(int argc, char **argv)
         printf("ERROR: failed to stop the gateway\n");
         return EXIT_FAILURE;
     }
-
-    if (com_type == LGW_COM_SPI) {
-        /* Board reset */
-        if (system("./reset_lgw.sh stop") != 0) {
-            printf("ERROR: failed to reset SX1302, check your reset_lgw.sh script\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-
     return 0;
 }
 
