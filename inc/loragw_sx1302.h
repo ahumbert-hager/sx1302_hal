@@ -129,18 +129,16 @@ int sx1302_radio_clock_select(uint8_t rf_chain);
 /**
 @brief Apply the radio reset sequence to the required RF chain index
 @param rf_chain The RF chain index of the radio to be reset
-@param type     The type of radio to be reset
 @return LGW_REG_SUCCESS if success, LGW_REG_ERROR otherwise
 */
-int sx1302_radio_reset(uint8_t rf_chain, lgw_radio_type_t type);
+int sx1302_radio_reset(uint8_t rf_chain);
 
 /**
 @brief Configure the radio type for the given RF chain
 @param rf_chain The RF chain index to be configured
-@param type     The type of radio to be set for the given RF chain
 @return LGW_REG_SUCCESS if success, LGW_REG_ERROR otherwise
 */
-int sx1302_radio_set_mode(uint8_t rf_chain, lgw_radio_type_t type);
+int sx1302_radio_set_mode(uint8_t rf_chain);
 
 /**
 @brief Give/Release control over the radios to/from the Host
@@ -153,10 +151,9 @@ int sx1302_radio_host_ctrl(bool host_ctrl);
 @brief Perform the radio calibration sequence and fill the TX gain LUT with calibration offsets
 @param context_rf_chain The RF chains array from which to get RF chains current configuration
 @param clksrc           The RF chain index which provides the clock source
-@param txgain_lut       A pointer to the TX gain LUT to be filled
 @return LGW_REG_SUCCESS if success, LGW_REG_ERROR otherwise
 */
-int sx1302_radio_calibrate(struct lgw_conf_rxrf_s * context_rf_chain, uint8_t clksrc, struct lgw_tx_gain_lut_s * txgain_lut);
+int sx1302_radio_calibrate(struct lgw_conf_rxrf_s * context_rf_chain, uint8_t clksrc);
 
 /**
 @brief Configure the PA and LNA LUTs
@@ -293,7 +290,7 @@ int sx1302_agc_mailbox_write(uint8_t mailbox, uint8_t value);
 @param TODO
 @return TODO
 */
-int sx1302_agc_start(uint8_t version, lgw_radio_type_t radio_type, uint8_t ana_gain, uint8_t dec_gain, bool full_duplex, bool lbt_enable);
+int sx1302_agc_start(uint8_t version, uint8_t ana_gain, uint8_t dec_gain);
 
 /**
 @brief TODO
@@ -384,14 +381,13 @@ int sx1302_parse(lgw_context_t * context, struct lgw_pkt_rx_s * p);
 /**
 @brief Configure the delay to be applied by the SX1302 for TX to start
 @param rf_chain      RF chain index to be configured
-@param radio_type    Type of radio for this RF chain
 @param modulation    Modulation used for the TX
 @param bandwidth     Bandwidth used for the TX
 @param chirp_lowpass Chirp Low Pass filtering configuration
 @param delay         TX start delay calculated and applied
 @return LGW_REG_SUCCESS if success, LGW_REG_ERROR otherwise
 */
-int sx1302_tx_set_start_delay(uint8_t rf_chain, lgw_radio_type_t radio_type, uint8_t modulation, uint8_t bandwidth, uint8_t chirp_lowpass, uint16_t * delay);
+int sx1302_tx_set_start_delay(uint8_t rf_chain, uint8_t modulation, uint8_t bandwidth, uint8_t chirp_lowpass, uint16_t * delay);
 
 /**
 @brief Compute the offset to be applied on RSSI for temperature compensation
@@ -428,14 +424,14 @@ int sx1302_tx_abort(uint8_t rf_chain);
 @param TODO
 @return TODO
 */
-int sx1302_tx_configure(lgw_radio_type_t radio_type);
+int sx1302_tx_configure(void);
 
 /**
 @brief TODO
 @param TODO
 @return TODO
 */
-int sx1302_send(lgw_radio_type_t radio_type, struct lgw_tx_gain_lut_s * tx_lut, bool lwan_public, struct lgw_conf_rxif_s * context_fsk, struct lgw_pkt_tx_s * pkt_data);
+int sx1302_send(bool lwan_public, struct lgw_conf_rxif_s * context_fsk, struct lgw_pkt_tx_s * pkt_data);
 
 /**
 @brief TODO

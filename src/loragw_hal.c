@@ -37,7 +37,6 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 #include "loragw_hal.h"
 #include "loragw_aux.h"
 #include "loragw_com.h"
-#include "loragw_lbt.h"
 #include "loragw_sx1250.h"
 #include "loragw_sx1261.h"
 #include "loragw_sx1302.h"
@@ -65,7 +64,6 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 #define TRACE()             fprintf(stderr, "@ %s %d\n", __FUNCTION__, __LINE__);
 
 #define CONTEXT_STARTED         lgw_context.is_started
-#define CONTEXT_COM_TYPE        lgw_context.board_cfg.com_type
 #define CONTEXT_COM_PATH        lgw_context.board_cfg.com_path
 #define CONTEXT_LWAN_PUBLIC     lgw_context.board_cfg.lorawan_public
 #define CONTEXT_BOARD           lgw_context.board_cfg
@@ -74,10 +72,8 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 #define CONTEXT_DEMOD           lgw_context.demod_cfg
 #define CONTEXT_LORA_SERVICE    lgw_context.lora_service_cfg
 #define CONTEXT_FSK             lgw_context.fsk_cfg
-#define CONTEXT_TX_GAIN_LUT     lgw_context.tx_gain_lut
 #define CONTEXT_FINE_TIMESTAMP  lgw_context.ftime_cfg
 #define CONTEXT_SX1261          lgw_context.sx1261_cfg
-#define CONTEXT_DEBUG           lgw_context.debug_cfg
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE CONSTANTS & TYPES -------------------------------------------- */
@@ -114,11 +110,9 @@ the _start and _send functions assume they are valid.
 */
 static lgw_context_t lgw_context = {
     .is_started = false,
-    .board_cfg.com_type = LGW_COM_USB,
     .board_cfg.com_path = "/dev/spidev0.0",
     .board_cfg.lorawan_public = true,
     .board_cfg.clksrc = 0,
-    .board_cfg.full_duplex = false,
     .rf_chain_cfg = {{0}},
     .if_chain_cfg = {{0}},
     .demod_cfg = {
@@ -144,33 +138,6 @@ static lgw_context_t lgw_context = {
         .sync_word_size = 3,
         .sync_word = 0xC194C1
     },
-    .tx_gain_lut = {
-        {
-            .size = 1,
-            .lut[0] = {
-                .rf_power = 14,
-                .dig_gain = 0,
-                .pa_gain = 2,
-                .dac_gain = 3,
-                .mix_gain = 10,
-                .offset_i = 0,
-                .offset_q = 0,
-                .pwr_idx = 0
-            }
-        },{
-            .size = 1,
-            .lut[0] = {
-                .rf_power = 14,
-                .dig_gain = 0,
-                .pa_gain = 2,
-                .dac_gain = 3,
-                .mix_gain = 10,
-                .offset_i = 0,
-                .offset_q = 0,
-                .pwr_idx = 0
-            }
-        }
-    },
     .ftime_cfg = {
         .enable = false,
         .mode = LGW_FTIME_MODE_ALL_SF
@@ -179,15 +146,6 @@ static lgw_context_t lgw_context = {
         .enable = false,
         .spi_path = "/dev/spidev0.1",
         .rssi_offset = 0,
-        .lbt_conf = {
-            .rssi_target = 0,
-            .nb_channel = 0,
-            .channels = {{ 0 }}
-        }
-    },
-    .debug_cfg = {
-        .nb_ref_payload = 0,
-        .log_file_name = "loragw_hal.log"
     }
 };
 
@@ -206,10 +164,6 @@ static int     ad_fd = -1;
 
 int32_t lgw_sf_getval(int x);
 int32_t lgw_bw_getval(int x);
-
-static bool is_same_pkt(struct lgw_pkt_rx_s *p1, struct lgw_pkt_rx_s *p2);
-static int remove_pkt(struct lgw_pkt_rx_s * p, uint8_t * nb_pkt, uint8_t pkt_index);
-static int merge_packets(struct lgw_pkt_rx_s * p, uint8_t * nb_pkt);
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE FUNCTIONS DEFINITION ----------------------------------------- */
@@ -239,198 +193,6 @@ int32_t lgw_sf_getval(int x) {
     }
 }
 
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
-static bool is_same_pkt(struct lgw_pkt_rx_s *p1, struct lgw_pkt_rx_s *p2) {
-    if ((p1 != NULL) && (p2 != NULL)) {
-        /* Criterias to determine if packets are identical:
-            -- count_us should be equal or can have up to 24µs of difference (3 samples)
-            -- channel should be same
-            -- datarate should be same
-            -- payload should be same
-        */
-        if ((abs(p1->count_us - p2->count_us) <= 24) &&
-            (p1->if_chain == p2->if_chain) &&
-            (p1->datarate == p2->datarate) &&
-            (p1->size == p2->size) &&
-            (memcmp(p1->payload, p2->payload, p1->size) == 0)) {
-
-            return true;
-        }
-    }
-
-    return false;
-}
-
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
-static int remove_pkt(struct lgw_pkt_rx_s * p, uint8_t * nb_pkt, uint8_t pkt_index) {
-    /* Check input parameters */
-    CHECK_NULL(p);
-    CHECK_NULL(nb_pkt);
-    if (pkt_index > ((*nb_pkt) - 1)) {
-        printf("ERROR: failed to remove packet index %u\n", pkt_index);
-        return -1;
-    }
-
-    /* Remove pkt from array, by replacing it with last packet of array */
-    if (pkt_index == ((*nb_pkt) - 1)) {
-        /* If we remove last element, just decrement nb packet counter */
-        /* Do nothing */
-    } else {
-        /* Copy last packet onto the packet to be removed */
-        memcpy(p + pkt_index, p + (*nb_pkt) - 1, sizeof(struct lgw_pkt_rx_s));
-    }
-
-    *nb_pkt -= 1;
-
-    return 0;
-}
-
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
-int compare_pkt_tmst(const void *a, const void *b, void *arg)
-{
-    struct lgw_pkt_rx_s *p = (struct lgw_pkt_rx_s *)a;
-    struct lgw_pkt_rx_s *q = (struct lgw_pkt_rx_s *)b;
-    int *counter = (int *)arg;
-    int p_count, q_count;
-
-    p_count = p->count_us;
-    q_count = q->count_us;
-
-    if (p_count > q_count) {
-        *counter = *counter + 1;
-    }
-
-    return (p_count - q_count);
-}
-
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
-static int merge_packets(struct lgw_pkt_rx_s * p, uint8_t * nb_pkt) {
-    uint8_t cpt;
-    int j, k, pkt_dup_idx, x;
-#if DEBUG_HAL == 1
-    int pkt_idx;
-#endif
-    bool dup_restart = false;
-    int counter_qsort_swap = 0;
-
-    /* Check input parameters */
-    CHECK_NULL(p);
-    CHECK_NULL(nb_pkt);
-
-    /* Init number of packets in array before merge */
-    cpt = *nb_pkt;
-
-    /* --------------------------------------------- */
-    /* ---------- For Debug only - START ----------- */
-    if (cpt > 0) {
-        DEBUG_MSG("<----- Searching for DUPLICATEs ------\n");
-    }
-    for (j = 0; j < cpt; j++) {
-        DEBUG_PRINTF("  %d: tmst=%u SF=%u CRC_status=%d freq=%u chan=%u", j, p[j].count_us, p[j].datarate, p[j].status, p[j].freq_hz, p[j].if_chain);
-        if (p[j].ftime_received == true) {
-            DEBUG_PRINTF(" ftime=%u\n", p[j].ftime);
-        } else {
-            DEBUG_MSG   (" ftime=NONE\n");
-        }
-    }
-    /* ---------- For Debug only - END ------------- */
-    /* --------------------------------------------- */
-
-    /* Remove duplicates */
-    j = 0;
-    while (j < cpt) {
-        for (k = (j+1); k < cpt; k++) {
-            /* Searching for duplicated packets:
-                -- count_us should be equal or can have up to 24µs of difference (3 samples)
-                -- channel should be same
-                -- datarate should be same
-                -- payload should be same
-            */
-            if (is_same_pkt( &p[j], &p[k])) {
-                /* We keep the packet which has CRC checked */
-                if ((p[j].status == STAT_CRC_OK) && (p[k].status == STAT_CRC_BAD)) {
-                    pkt_dup_idx = k;
-#if DEBUG_HAL == 1
-                    pkt_idx = j;
-#endif
-                } else if ((p[j].status == STAT_CRC_BAD) && (p[k].status == STAT_CRC_OK)) {
-                    pkt_dup_idx = j;
-#if DEBUG_HAL == 1
-                    pkt_idx = k;
-#endif
-                } else {
-                    /* we keep the packet which has a fine timestamp */
-                    if (p[j].ftime_received == true) {
-                        pkt_dup_idx = k;
-#if DEBUG_HAL == 1
-                        pkt_idx = j;
-#endif
-                    } else {
-                        pkt_dup_idx = j;
-#if DEBUG_HAL == 1
-                        pkt_idx = k;
-#endif
-                    }
-                    /* sanity check */
-                    if (((p[j].ftime_received == true) && (p[k].ftime_received == true)) ||
-                        ((p[j].ftime_received == false) && (p[k].ftime_received == false))) {
-                        DEBUG_MSG("WARNING: both duplicates have fine timestamps, or none has ? TBC\n");
-                    }
-                }
-                /* pkt_dup_idx contains the index to be deleted */
-                DEBUG_PRINTF("duplicate found %d:%d, deleting %d\n", pkt_idx, pkt_dup_idx, pkt_dup_idx);
-                /* Remove duplicated packet from packet array */
-                x = remove_pkt(p, &cpt, pkt_dup_idx);
-                if (x != 0) {
-                    printf("ERROR: failed to remove packet from array (%d)\n", x);
-                }
-                dup_restart = true;
-                break;
-            }
-        }
-        if (dup_restart == true) {
-            /* Duplicate found, restart searching for duplicate from first element */
-            j = 0;
-            dup_restart = false;
-        } else {
-            /* No duplicate found, continue... */
-            j += 1;
-        }
-    }
-
-    /* Sort the packet array by ascending counter_us value */
-    qsort_r(p, cpt, sizeof(p[0]), compare_pkt_tmst, &counter_qsort_swap);
-    DEBUG_PRINTF("%d elements swapped during sorting...\n", counter_qsort_swap);
-
-    /* --------------------------------------------- */
-    /* ---------- For Debug only - START ----------- */
-    if (cpt > 0) {
-        DEBUG_MSG("--\n");
-    }
-    for (j = 0; j < cpt; j++) {
-        DEBUG_PRINTF("  %d: tmst=%u SF=%d CRC_status=%d freq=%u chan=%u", j, p[j].count_us, p[j].datarate, p[j].status, p[j].freq_hz, p[j].if_chain);
-        if (p[j].ftime_received == true) {
-            DEBUG_PRINTF(" ftime=%u\n", p[j].ftime);
-        } else {
-            DEBUG_MSG   (" ftime=NONE\n");
-        }
-    }
-    if (cpt > 0) {
-        DEBUG_MSG( " ------------------------------------>\n\n" );
-    }
-    /* ---------- For Debug only - END ------------- */
-    /* --------------------------------------------- */
-
-    /* Update number of packets contained in packet array */
-    *nb_pkt = cpt;
-
-    return 0;
-}
-
 /* -------------------------------------------------------------------------- */
 /* --- PUBLIC FUNCTIONS DEFINITION ------------------------------------------ */
 
@@ -443,25 +205,16 @@ int lgw_board_setconf(struct lgw_conf_board_s * conf) {
         return LGW_HAL_ERROR;
     }
 
-    /* Check input parameters */
-    if ((conf->com_type != LGW_COM_USB)) {
-        DEBUG_MSG("ERROR: WRONG COM TYPE\n");
-        return LGW_HAL_ERROR;
-    }
-
     /* set internal config according to parameters */
     CONTEXT_LWAN_PUBLIC = conf->lorawan_public;
     CONTEXT_BOARD.clksrc = conf->clksrc;
-    CONTEXT_BOARD.full_duplex = conf->full_duplex;
-    CONTEXT_COM_TYPE = conf->com_type;
     strncpy(CONTEXT_COM_PATH, conf->com_path, sizeof CONTEXT_COM_PATH);
     CONTEXT_COM_PATH[sizeof CONTEXT_COM_PATH - 1] = '\0'; /* ensure string termination */
 
-    DEBUG_PRINTF("Note: board configuration: com_type: %s, com_path: %s, lorawan_public:%d, clksrc:%d, full_duplex:%d\n",   "USB",
+    DEBUG_PRINTF("Note: board configuration: com_type: %s, com_path: %s, lorawan_public:%d, clksrc:%d,\n",   "USB",
                                                                                                                             CONTEXT_COM_PATH,
                                                                                                                             CONTEXT_LWAN_PUBLIC,
-                                                                                                                            CONTEXT_BOARD.clksrc,
-                                                                                                                            CONTEXT_BOARD.full_duplex);
+                                                                                                                            CONTEXT_BOARD.clksrc);
 
     return LGW_HAL_SUCCESS;
 }
@@ -489,12 +242,6 @@ int lgw_rxrf_setconf(uint8_t rf_chain, struct lgw_conf_rxrf_s * conf) {
         return LGW_HAL_ERROR;
     }
 
-    /* check if radio type is supported */
-    if (conf->type != LGW_RADIO_TYPE_SX1250) {
-        DEBUG_PRINTF("ERROR: NOT A VALID RADIO TYPE (%d)\n", conf->type);
-        return LGW_HAL_ERROR;
-    }
-
     /* check if the radio central frequency is valid */
     if ((conf->freq_hz < LGW_RF_RX_FREQ_MIN) || (conf->freq_hz > LGW_RF_RX_FREQ_MAX)) {
         DEBUG_PRINTF("ERROR: NOT A VALID RADIO CENTER FREQUENCY, PLEASE CHECK IF IT HAS BEEN GIVEN IN HZ (%u)\n", conf->freq_hz);
@@ -510,11 +257,10 @@ int lgw_rxrf_setconf(uint8_t rf_chain, struct lgw_conf_rxrf_s * conf) {
     CONTEXT_RF_CHAIN[rf_chain].rssi_tcomp.coeff_c = conf->rssi_tcomp.coeff_c;
     CONTEXT_RF_CHAIN[rf_chain].rssi_tcomp.coeff_d = conf->rssi_tcomp.coeff_d;
     CONTEXT_RF_CHAIN[rf_chain].rssi_tcomp.coeff_e = conf->rssi_tcomp.coeff_e;
-    CONTEXT_RF_CHAIN[rf_chain].type = conf->type;
     CONTEXT_RF_CHAIN[rf_chain].tx_enable = conf->tx_enable;
     CONTEXT_RF_CHAIN[rf_chain].single_input_mode = conf->single_input_mode;
 
-    DEBUG_PRINTF("Note: rf_chain %d configuration; en:%d freq:%d rssi_offset:%f radio_type:%d tx_enable:%d single_input_mode:%d\n",  rf_chain,
+    DEBUG_PRINTF("Note: rf_chain %d configuration; en:%d freq:%d rssi_offset:%f tx_enable:%d single_input_mode:%d\n",  rf_chain,
                                                                                                                 CONTEXT_RF_CHAIN[rf_chain].enable,
                                                                                                                 CONTEXT_RF_CHAIN[rf_chain].freq_hz,
                                                                                                                 CONTEXT_RF_CHAIN[rf_chain].rssi_offset,
@@ -705,143 +451,15 @@ int lgw_demod_setconf(struct lgw_conf_demod_s * conf) {
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-int lgw_txgain_setconf(uint8_t rf_chain, struct lgw_tx_gain_lut_s * conf) {
-    int i;
-
-    CHECK_NULL(conf);
-
-    /* Check LUT size */
-    if ((conf->size < 1) || (conf->size > TX_GAIN_LUT_SIZE_MAX)) {
-        DEBUG_PRINTF("ERROR: TX gain LUT must have at least one entry and  maximum %d entries\n", TX_GAIN_LUT_SIZE_MAX);
-        return LGW_HAL_ERROR;
-    }
-
-    CONTEXT_TX_GAIN_LUT[rf_chain].size = conf->size;
-
-    for (i = 0; i < CONTEXT_TX_GAIN_LUT[rf_chain].size; i++) {
-        /* Check gain range */
-        if (conf->lut[i].dig_gain > 3) {
-            DEBUG_MSG("ERROR: TX gain LUT: SX1302 digital gain must be between 0 and 3\n");
-            return LGW_HAL_ERROR;
-        }
-        if (conf->lut[i].dac_gain > 3) {
-            DEBUG_MSG("ERROR: TX gain LUT: SX1257 DAC gains must not exceed 3\n");
-            return LGW_HAL_ERROR;
-        }
-        if ((conf->lut[i].mix_gain < 5) || (conf->lut[i].mix_gain > 15)) {
-            DEBUG_MSG("ERROR: TX gain LUT: SX1257 mixer gain must be betwen [5..15]\n");
-            return LGW_HAL_ERROR;
-        }
-        if (conf->lut[i].pa_gain > 3) {
-            DEBUG_MSG("ERROR: TX gain LUT: External PA gain must not exceed 3\n");
-            return LGW_HAL_ERROR;
-        }
-        if (conf->lut[i].pwr_idx > 22) {
-            DEBUG_MSG("ERROR: TX gain LUT: SX1250 power index must not exceed 22\n");
-            return LGW_HAL_ERROR;
-        }
-
-        /* Set internal LUT */
-        CONTEXT_TX_GAIN_LUT[rf_chain].lut[i].rf_power = conf->lut[i].rf_power;
-        CONTEXT_TX_GAIN_LUT[rf_chain].lut[i].dig_gain = conf->lut[i].dig_gain;
-        CONTEXT_TX_GAIN_LUT[rf_chain].lut[i].pa_gain  = conf->lut[i].pa_gain;
-        /* sx125x */
-        CONTEXT_TX_GAIN_LUT[rf_chain].lut[i].dac_gain = conf->lut[i].dac_gain;
-        CONTEXT_TX_GAIN_LUT[rf_chain].lut[i].mix_gain = conf->lut[i].mix_gain;
-        CONTEXT_TX_GAIN_LUT[rf_chain].lut[i].offset_i = 0; /* To be calibrated */
-        CONTEXT_TX_GAIN_LUT[rf_chain].lut[i].offset_q = 0; /* To be calibrated */
-
-        /* sx1250 */
-        CONTEXT_TX_GAIN_LUT[rf_chain].lut[i].pwr_idx = conf->lut[i].pwr_idx;
-    }
-
-    return LGW_HAL_SUCCESS;
-}
-
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
-int lgw_ftime_setconf(struct lgw_conf_ftime_s * conf) {
-    CHECK_NULL(conf);
-
-    CONTEXT_FINE_TIMESTAMP.enable = conf->enable;
-    CONTEXT_FINE_TIMESTAMP.mode = conf->mode;
-
-    return LGW_HAL_SUCCESS;
-}
-
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
-int lgw_sx1261_setconf(struct lgw_conf_sx1261_s * conf) {
-    int i;
-
-    CHECK_NULL(conf);
-
-    /* Set the SX1261 global conf */
-    CONTEXT_SX1261.enable = conf->enable;
-    strncpy(CONTEXT_SX1261.spi_path, conf->spi_path, sizeof CONTEXT_SX1261.spi_path);
-    CONTEXT_SX1261.spi_path[sizeof CONTEXT_SX1261.spi_path - 1] = '\0'; /* ensure string termination */
-    CONTEXT_SX1261.rssi_offset = conf->rssi_offset;
-
-    /* Set the LBT conf */
-    CONTEXT_SX1261.lbt_conf.enable = conf->lbt_conf.enable;
-    CONTEXT_SX1261.lbt_conf.rssi_target = conf->lbt_conf.rssi_target;
-    CONTEXT_SX1261.lbt_conf.nb_channel = conf->lbt_conf.nb_channel;
-    for (i = 0; i < CONTEXT_SX1261.lbt_conf.nb_channel; i++) {
-        if (conf->lbt_conf.channels[i].bandwidth != BW_125KHZ && conf->lbt_conf.channels[i].bandwidth != BW_250KHZ) {
-            printf("ERROR: bandwidth not supported for LBT channel %d\n", i);
-            return LGW_HAL_ERROR;
-        }
-        if (conf->lbt_conf.channels[i].scan_time_us != LGW_LBT_SCAN_TIME_128_US && conf->lbt_conf.channels[i].scan_time_us != LGW_LBT_SCAN_TIME_5000_US) {
-            printf("ERROR: scan_time_us not supported for LBT channel %d\n", i);
-            return LGW_HAL_ERROR;
-        }
-        CONTEXT_SX1261.lbt_conf.channels[i] = conf->lbt_conf.channels[i];
-    }
-
-    return LGW_HAL_SUCCESS;
-}
-
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
-int lgw_debug_setconf(struct lgw_conf_debug_s * conf) {
-    int i;
-
-    CHECK_NULL(conf);
-
-    CONTEXT_DEBUG.nb_ref_payload = conf->nb_ref_payload;
-    for (i = 0; i < CONTEXT_DEBUG.nb_ref_payload; i++) {
-        /* Get user configuration */
-        CONTEXT_DEBUG.ref_payload[i].id = conf->ref_payload[i].id;
-
-        /* Initialize global context */
-        CONTEXT_DEBUG.ref_payload[i].prev_cnt = 0;
-        CONTEXT_DEBUG.ref_payload[i].payload[0] = (uint8_t)(CONTEXT_DEBUG.ref_payload[i].id >> 24);
-        CONTEXT_DEBUG.ref_payload[i].payload[1] = (uint8_t)(CONTEXT_DEBUG.ref_payload[i].id >> 16);
-        CONTEXT_DEBUG.ref_payload[i].payload[2] = (uint8_t)(CONTEXT_DEBUG.ref_payload[i].id >> 8);
-        CONTEXT_DEBUG.ref_payload[i].payload[3] = (uint8_t)(CONTEXT_DEBUG.ref_payload[i].id >> 0);
-    }
-
-    if (conf->log_file_name != NULL) {
-        strncpy(CONTEXT_DEBUG.log_file_name, conf->log_file_name, sizeof CONTEXT_DEBUG.log_file_name);
-        CONTEXT_DEBUG.log_file_name[sizeof CONTEXT_DEBUG.log_file_name - 1] = '\0'; /* ensure string termination */
-    }
-
-    return LGW_HAL_SUCCESS;
-}
-
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
 int lgw_start(void) {
     int i, err;
     uint8_t fw_version_agc;
-
-    DEBUG_PRINTF(" --- %s\n", "IN");
 
     if (CONTEXT_STARTED == true) {
         DEBUG_MSG("Note: LoRa concentrator already started, restarting it now\n");
     }
 
-    err = lgw_connect(CONTEXT_COM_TYPE, CONTEXT_COM_PATH);
+    err = lgw_connect(CONTEXT_COM_PATH);
     if (err == LGW_REG_ERROR) {
         DEBUG_MSG("ERROR: FAIL TO CONNECT BOARD\n");
         return LGW_HAL_ERROR;
@@ -855,7 +473,7 @@ int lgw_start(void) {
     }
 
     /* Calibrate radios */
-    err = sx1302_radio_calibrate(&CONTEXT_RF_CHAIN[0], CONTEXT_BOARD.clksrc, &CONTEXT_TX_GAIN_LUT[0]);
+    err = sx1302_radio_calibrate(&CONTEXT_RF_CHAIN[0], CONTEXT_BOARD.clksrc);
     if (err != LGW_REG_SUCCESS) {
         printf("ERROR: radio calibration failed\n");
         return LGW_HAL_ERROR;
@@ -865,7 +483,7 @@ int lgw_start(void) {
     for (i = 0; i < LGW_RF_CHAIN_NB; i++) {
         if (CONTEXT_RF_CHAIN[i].enable == true) {
             /* Reset the radio */
-            err = sx1302_radio_reset(i, CONTEXT_RF_CHAIN[i].type);
+            err = sx1302_radio_reset(i);
             if (err != LGW_REG_SUCCESS) {
                 printf("ERROR: failed to reset radio %d\n", i);
                 return LGW_HAL_ERROR;
@@ -879,7 +497,7 @@ int lgw_start(void) {
             }
 
             /* Set radio mode */
-            err = sx1302_radio_set_mode(i, CONTEXT_RF_CHAIN[i].type);
+            err = sx1302_radio_set_mode(i);
             if (err != LGW_REG_SUCCESS) {
                 printf("ERROR: failed to set mode for radio %d\n", i);
                 return LGW_HAL_ERROR;
@@ -979,21 +597,15 @@ int lgw_start(void) {
     }
 
     /* Load AGC firmware */
-    switch (CONTEXT_RF_CHAIN[CONTEXT_BOARD.clksrc].type) {
-        case LGW_RADIO_TYPE_SX1250:
-            DEBUG_MSG("Loading AGC fw for sx1250\n");
-            err = sx1302_agc_load_firmware(agc_firmware_sx1250);
-            if (err != LGW_REG_SUCCESS) {
-                printf("ERROR: failed to load AGC firmware for sx1250\n");
-                return LGW_HAL_ERROR;
-            }
-            fw_version_agc = FW_VERSION_AGC_SX1250;
-            break;
-        default:
-            printf("ERROR: failed to load AGC firmware, radio type not supported (%d)\n", CONTEXT_RF_CHAIN[CONTEXT_BOARD.clksrc].type);
-            return LGW_HAL_ERROR;
+    DEBUG_MSG("Loading AGC fw for sx1250\n");
+    err = sx1302_agc_load_firmware(agc_firmware_sx1250);
+    if (err != LGW_REG_SUCCESS) {
+        printf("ERROR: failed to load AGC firmware for sx1250\n");
+        return LGW_HAL_ERROR;
     }
-    err = sx1302_agc_start(fw_version_agc, CONTEXT_RF_CHAIN[CONTEXT_BOARD.clksrc].type, SX1302_AGC_RADIO_GAIN_AUTO, SX1302_AGC_RADIO_GAIN_AUTO, CONTEXT_BOARD.full_duplex, CONTEXT_SX1261.lbt_conf.enable);
+    fw_version_agc = FW_VERSION_AGC_SX1250;
+
+    err = sx1302_agc_start(fw_version_agc, SX1302_AGC_RADIO_GAIN_AUTO, SX1302_AGC_RADIO_GAIN_AUTO);
     if (err != LGW_REG_SUCCESS) {
         printf("ERROR: failed to start AGC firmware\n");
         return LGW_HAL_ERROR;
@@ -1013,7 +625,7 @@ int lgw_start(void) {
     }
 
     /* static TX configuration */
-    err = sx1302_tx_configure(CONTEXT_RF_CHAIN[CONTEXT_BOARD.clksrc].type);
+    err = sx1302_tx_configure();
     if (err != LGW_REG_SUCCESS) {
         printf("ERROR: failed to configure SX1302 TX path\n");
         return LGW_HAL_ERROR;
@@ -1057,8 +669,6 @@ int lgw_start(void) {
     /* set hal state */
     CONTEXT_STARTED = true;
 
-    DEBUG_PRINTF(" --- %s\n", "OUT");
-
     return LGW_HAL_SUCCESS;
 }
 
@@ -1066,8 +676,6 @@ int lgw_start(void) {
 
 int lgw_stop(void) {
     int i, x, err = LGW_HAL_SUCCESS;
-
-    DEBUG_PRINTF(" --- %s\n", "IN");
 
     if (CONTEXT_STARTED == false) {
         DEBUG_MSG("Note: LoRa concentrator was not started...\n");
@@ -1099,8 +707,6 @@ int lgw_stop(void) {
 
     CONTEXT_STARTED = false;
 
-    DEBUG_PRINTF(" --- %s\n", "OUT");
-
     return err;
 }
 
@@ -1112,13 +718,6 @@ int lgw_receive(uint8_t max_pkt, struct lgw_pkt_rx_s *pkt_data) {
     uint8_t nb_pkt_found = 0;
     uint8_t nb_pkt_left = 0;
     float current_temperature = 0.0, rssi_temperature_offset = 0.0;
-    /* performances variables */
-    struct timeval tm;
-
-    DEBUG_PRINTF(" --- %s\n", "IN");
-
-    /* Record function start time */
-    _meas_time_start(&tm);
 
     /* Get packets from SX1302, if any */
     res = sx1302_fetch(&nb_pkt_fetched);
@@ -1136,7 +735,6 @@ int lgw_receive(uint8_t max_pkt, struct lgw_pkt_rx_s *pkt_data) {
 
     /* Exit now if no packet fetched */
     if (nb_pkt_fetched == 0) {
-        _meas_time_stop(1, tm, __FUNCTION__);
         return 0;
     }
     if (nb_pkt_fetched > max_pkt) {
@@ -1174,20 +772,6 @@ int lgw_receive(uint8_t max_pkt, struct lgw_pkt_rx_s *pkt_data) {
     }
 
     DEBUG_PRINTF("INFO: nb pkt found:%u left:%u\n", nb_pkt_found, nb_pkt_left);
-
-    /* Remove duplicated packets generated by double demod when precision timestamp is enabled */
-    if ((nb_pkt_found > 0) && (CONTEXT_FINE_TIMESTAMP.enable == true)) {
-        res = merge_packets(pkt_data, &nb_pkt_found);
-        if (res != 0) {
-            printf("WARNING: failed to remove duplicated packets\n");
-        }
-
-        DEBUG_PRINTF("INFO: nb pkt found:%u (after de-duplicating)\n", nb_pkt_found);
-    }
-
-    _meas_time_stop(1, tm, __FUNCTION__);
-
-    DEBUG_PRINTF(" --- %s\n", "OUT");
 
     return nb_pkt_found;
 }
@@ -1269,67 +853,18 @@ int lgw_send(struct lgw_pkt_tx_s * pkt_data) {
         return LGW_HAL_ERROR;
     }
 
-    /* Start Listen-Before-Talk */
-    if (CONTEXT_SX1261.lbt_conf.enable == true) {
-        err = lgw_lbt_start(&CONTEXT_SX1261, pkt_data);
-        if (err != 0) {
-            printf("ERROR: failed to start LBT\n");
-            return LGW_HAL_ERROR;
-        }
-    }
-
     /* Send the TX request to the concentrator */
-    err = sx1302_send(CONTEXT_RF_CHAIN[pkt_data->rf_chain].type, &CONTEXT_TX_GAIN_LUT[pkt_data->rf_chain], CONTEXT_LWAN_PUBLIC, &CONTEXT_FSK, pkt_data);
+    err = sx1302_send(CONTEXT_LWAN_PUBLIC, &CONTEXT_FSK, pkt_data);
     if (err != LGW_REG_SUCCESS) {
         printf("ERROR: %s: Failed to send packet\n", __FUNCTION__);
-
-        if (CONTEXT_SX1261.lbt_conf.enable == true) {
-            err = lgw_lbt_stop();
-            if (err != 0) {
-                printf("ERROR: %s: Failed to stop LBT\n", __FUNCTION__);
-            }
-        }
-
         return LGW_HAL_ERROR;
     }
 
     _meas_time_stop(1, tm, __FUNCTION__);
 
-    /* Stop Listen-Before-Talk */
-    if (CONTEXT_SX1261.lbt_conf.enable == true) {
-        err = lgw_lbt_tx_status(pkt_data->rf_chain, &lbt_tx_allowed);
-        if (err != 0) {
-            printf("ERROR: %s: Failed to get LBT TX status, TX aborted\n", __FUNCTION__);
-            err = sx1302_tx_abort(pkt_data->rf_chain);
-            if (err != 0) {
-                printf("ERROR: %s: Failed to abort TX\n", __FUNCTION__);
-            }
-            err = lgw_lbt_stop();
-            if (err != 0) {
-                printf("ERROR: %s: Failed to stop LBT\n", __FUNCTION__);
-            }
-            return LGW_HAL_ERROR;
-        }
-        if (lbt_tx_allowed == true) {
-            printf("LBT: packet is allowed to be transmitted\n");
-        } else {
-            printf("LBT: (ERROR) packet is NOT allowed to be transmitted\n");
-        }
-
-        err = lgw_lbt_stop();
-        if (err != 0) {
-            printf("ERROR: %s: Failed to stop LBT\n", __FUNCTION__);
-            return LGW_HAL_ERROR;
-        }
-    }
-
     DEBUG_PRINTF(" --- %s\n", "OUT");
 
-    if (CONTEXT_SX1261.lbt_conf.enable == true && lbt_tx_allowed == false) {
-        return LGW_LBT_NOT_ALLOWED;
-    } else {
-        return LGW_HAL_SUCCESS;
-    }
+    return LGW_HAL_SUCCESS;
 }
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
@@ -1488,49 +1023,6 @@ uint32_t lgw_time_on_air(const struct lgw_pkt_tx_s *packet) {
     DEBUG_PRINTF(" --- %s\n", "OUT");
 
     return toa_ms;
-}
-
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
-int lgw_spectral_scan_start(uint32_t freq_hz, uint16_t nb_scan) {
-    int err;
-
-    if (CONTEXT_SX1261.enable != true) {
-        printf("ERROR: sx1261 is not enabled, no spectral scan\n");
-        return LGW_HAL_ERROR;
-    }
-
-    err = sx1261_set_rx_params(freq_hz, BW_125KHZ);
-    if (err != LGW_REG_SUCCESS) {
-        printf("ERROR: Failed to set RX params for Spectral Scan\n");
-        return LGW_HAL_ERROR;
-    }
-
-    err = sx1261_spectral_scan_start(nb_scan);
-    if (err != LGW_REG_SUCCESS) {
-        printf("ERROR: start spectral scan failed\n");
-        return LGW_HAL_ERROR;
-    }
-
-    return LGW_HAL_SUCCESS;
-}
-
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
-int lgw_spectral_scan_get_status(lgw_spectral_scan_status_t * status) {
-    return sx1261_spectral_scan_status(status);
-}
-
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
-int lgw_spectral_scan_get_results(int16_t levels_dbm[static LGW_SPECTRAL_SCAN_RESULT_SIZE], uint16_t results[static LGW_SPECTRAL_SCAN_RESULT_SIZE]) {
-    return sx1261_spectral_scan_get_results(CONTEXT_SX1261.rssi_offset, levels_dbm, results);
-}
-
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
-int lgw_spectral_scan_abort() {
-    return sx1261_spectral_scan_abort();
 }
 
 /* --- EOF ------------------------------------------------------------------ */

@@ -22,7 +22,6 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 #include <stdbool.h>    /* bool type */
 #include <stdio.h>      /* printf fprintf */
 #include <stdlib.h>     /* rand */
-#include <unistd.h>     /* lseek, close */
 #include <string.h>     /* memset */
 
 #include "loragw_mcu.h"

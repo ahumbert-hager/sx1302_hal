@@ -51,13 +51,11 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 /* -------------------------------------------------------------------------- */
 /* --- MAIN FUNCTION -------------------------------------------------------- */
 
-int main(int argc, char **argv)
+int main(void)
 {
     /* SPI interfaces */
     const char com_path_default[] = "COM7";
     const char * com_path = com_path_default;
-    lgw_com_type_t com_type = LGW_COM_USB;
-
 
     int i, j, x;
     uint32_t fa = DEFAULT_FREQ_HZ;
@@ -65,11 +63,9 @@ int main(int argc, char **argv)
     double arg_d = 0.0;
     unsigned int arg_u;
     uint8_t clocksource = 0;
-    lgw_radio_type_t radio_type = LGW_RADIO_TYPE_SX1250;
     uint8_t max_rx_pkt = 16;
     bool single_input_mode = false;
     float rssi_offset = 0.0;
-    bool full_duplex = false;
 
     struct lgw_conf_board_s boardconf;
     struct lgw_conf_rxrf_s rfconf;
@@ -115,38 +111,34 @@ int main(int argc, char **argv)
     memset( &boardconf, 0, sizeof boardconf);
     boardconf.lorawan_public = true;
     boardconf.clksrc = clocksource;
-    boardconf.full_duplex = full_duplex;
-    boardconf.com_type = com_type;
     strncpy(boardconf.com_path, com_path, sizeof boardconf.com_path);
     boardconf.com_path[sizeof boardconf.com_path - 1] = '\0'; /* ensure string termination */
     if (lgw_board_setconf(&boardconf) != LGW_HAL_SUCCESS) {
         printf("ERROR: failed to configure board\n");
-        return EXIT_FAILURE;
+        return -1;
     }
 
     /* set configuration for RF chains */
     memset( &rfconf, 0, sizeof rfconf);
     rfconf.enable = true;
     rfconf.freq_hz = fa;
-    rfconf.type = radio_type;
     rfconf.rssi_offset = rssi_offset;
     rfconf.tx_enable = false;
     rfconf.single_input_mode = single_input_mode;
     if (lgw_rxrf_setconf(0, &rfconf) != LGW_HAL_SUCCESS) {
         printf("ERROR: failed to configure rxrf 0\n");
-        return EXIT_FAILURE;
+        return -1;
     }
 
     memset( &rfconf, 0, sizeof rfconf);
     rfconf.enable = true;
     rfconf.freq_hz = fb;
-    rfconf.type = radio_type;
     rfconf.rssi_offset = rssi_offset;
     rfconf.tx_enable = false;
     rfconf.single_input_mode = single_input_mode;
     if (lgw_rxrf_setconf(1, &rfconf) != LGW_HAL_SUCCESS) {
         printf("ERROR: failed to configure rxrf 1\n");
-        return EXIT_FAILURE;
+        return -1;
     }
 
     /* set configuration for LoRa multi-SF channels (bandwidth cannot be set) */
@@ -161,12 +153,12 @@ int main(int argc, char **argv)
             ifconf.freq_hz = channel_if_mode1[i];
         } else {
             printf("ERROR: channel mode not supported\n");
-            return EXIT_FAILURE;
+            return -1;
         }
         ifconf.datarate = DR_LORA_SF7;
         if (lgw_rxif_setconf(i, &ifconf) != LGW_HAL_SUCCESS) {
             printf("ERROR: failed to configure rxif %d\n", i);
-            return EXIT_FAILURE;
+            return -1;
         }
     }
 
@@ -178,7 +170,7 @@ int main(int argc, char **argv)
     ifconf.bandwidth = BW_250KHZ;
     if (lgw_rxif_setconf(8, &ifconf) != LGW_HAL_SUCCESS) {
         printf("ERROR: failed to configure rxif for LoRa service channel\n");
-        return EXIT_FAILURE;
+        return -1;
     }
 
     /* set the buffer size to hold received packets */
@@ -190,7 +182,7 @@ int main(int argc, char **argv)
     x = lgw_start();
     if (x != 0) {
         printf("ERROR: failed to start the gateway\n");
-        return EXIT_FAILURE;
+        return -1;
     }
 
     /* Loop until we have enough packets with CRC OK */
@@ -238,7 +230,7 @@ int main(int argc, char **argv)
     x = lgw_stop();
     if (x != 0) {
         printf("ERROR: failed to stop the gateway\n");
-        return EXIT_FAILURE;
+        return -1;
     }
 
     printf("=========== Test End ===========\n");

@@ -59,26 +59,6 @@ const struct agc_gain_params_s agc_params_sx1250 = {
     .hpMax = 7,
     .paDutyCycle = 4
 };
-
-const struct agc_gain_params_s agc_params_sx125x = {
-    .ana_min = 0,
-    .ana_max = 9,
-    .ana_thresh_l = 16,
-    .ana_thresh_h = 35,
-    .dec_attn_min = 7,
-    .dec_attn_max = 11,
-    .dec_thresh_l = 45,
-    .dec_thresh_h1 = 100,
-    .dec_thresh_h2 = 115,
-    .chan_attn_min = 4,
-    .chan_attn_max = 14,
-    .chan_thresh_l = 52,
-    .chan_thresh_h = 132,
-    .deviceSel = 0,
-    .hpMax = 0,
-    .paDutyCycle = 0
-};
-
 #endif
 
 /* --- EOF ------------------------------------------------------------------ */

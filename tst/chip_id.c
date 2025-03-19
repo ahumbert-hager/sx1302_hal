@@ -13,27 +13,15 @@ Description:
 License: Revised BSD License, see LICENSE.TXT file include in the project
 */
 
-
 /* -------------------------------------------------------------------------- */
 /* --- DEPENDANCIES --------------------------------------------------------- */
-
-/* fix an issue between POSIX and C99 */
-#if __STDC_VERSION__ >= 199901L
-    #define _XOPEN_SOURCE 600
-#else
-    #define _XOPEN_SOURCE 500
-#endif
 
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <inttypes.h>   /* PRIx64, PRIu64... */
 #include <string.h>
-#include <unistd.h>
 #include <math.h>
-#include <signal.h>     /* sigaction */
-#include <getopt.h>     /* getopt_long */
-
+#include <inttypes.h>
 #include "loragw_hal.h"
 #include "loragw_reg.h"
 #include "loragw_aux.h"
@@ -55,17 +43,14 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE FUNCTIONS ---------------------------------------------------- */
 
-
-
 /* -------------------------------------------------------------------------- */
 /* --- MAIN FUNCTION -------------------------------------------------------- */
 
-int main(int argc, char **argv)
+int main(void)
 {
     int i, x;
     unsigned int arg_u;
     uint8_t clocksource = 0;
-    lgw_radio_type_t radio_type = LGW_RADIO_TYPE_SX1250;
 
     struct lgw_conf_board_s boardconf;
     struct lgw_conf_rxrf_s rfconf;
@@ -74,47 +59,42 @@ int main(int argc, char **argv)
     /* SPI interfaces */
     const char com_path_default[] = "COM7";
     const char * com_path = com_path_default;
-    lgw_com_type_t com_type = LGW_COM_USB;
 
     /* Configure the gateway */
     memset(&boardconf, 0, sizeof boardconf);
     boardconf.lorawan_public = true;
     boardconf.clksrc = clocksource;
-    boardconf.full_duplex = false;
-    boardconf.com_type = com_type;
     strncpy(boardconf.com_path, com_path, sizeof boardconf.com_path);
     boardconf.com_path[sizeof boardconf.com_path - 1] = '\0'; /* ensure string termination */
     if (lgw_board_setconf(&boardconf) != LGW_HAL_SUCCESS) {
         printf("ERROR: failed to configure board\n");
-        return EXIT_FAILURE;
+        return -1;
     }
 
     memset(&rfconf, 0, sizeof rfconf);
     rfconf.enable = true; /* rf chain 0 needs to be enabled for calibration to work on sx1257 */
     rfconf.freq_hz = 868500000; /* dummy */
-    rfconf.type = radio_type;
     rfconf.tx_enable = false;
     rfconf.single_input_mode = false;
     if (lgw_rxrf_setconf(0, &rfconf) != LGW_HAL_SUCCESS) {
         printf("ERROR: failed to configure rxrf 0\n");
-        return EXIT_FAILURE;
+        return -1;
     }
 
     memset(&rfconf, 0, sizeof rfconf);
     rfconf.enable = (clocksource == 1) ? true : false;
     rfconf.freq_hz = 868500000; /* dummy */
-    rfconf.type = radio_type;
     rfconf.tx_enable = false;
     rfconf.single_input_mode = false;
     if (lgw_rxrf_setconf(1, &rfconf) != LGW_HAL_SUCCESS) {
         printf("ERROR: failed to configure rxrf 1\n");
-        return EXIT_FAILURE;
+        return -1;
     }
 
     x = lgw_start();
     if (x != 0) {
         printf("ERROR: failed to start the gateway\n");
-        return EXIT_FAILURE;
+        return -1;
     }
 
     /* get the concentrator EUI */
@@ -129,7 +109,7 @@ int main(int argc, char **argv)
     x = lgw_stop();
     if (x != 0) {
         printf("ERROR: failed to stop the gateway\n");
-        return EXIT_FAILURE;
+        return -1;
     }
     return 0;
 }

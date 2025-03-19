@@ -37,11 +37,6 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 /* -------------------------------------------------------------------------- */
 /* --- PUBLIC TYPES --------------------------------------------------------- */
 
-typedef enum com_type_e {
-    LGW_COM_USB,
-    LGW_COM_UNKNOWN
-} lgw_com_type_t;
-
 typedef enum com_write_mode_e {
     LGW_COM_WRITE_MODE_SINGLE,
     LGW_COM_WRITE_MODE_BULK,

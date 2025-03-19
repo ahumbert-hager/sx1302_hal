@@ -107,15 +107,6 @@ int rx_buffer_fetch(rx_buffer_t * self);
 */
 int rx_buffer_pop(rx_buffer_t * self, rx_packet_t * pkt);
 
-/* -------------------------------------------------------------------------- */
-/* --- DEBUG FUNCTIONS PROTOTYPES ------------------------------------------- */
-
-uint16_t rx_buffer_read_ptr_addr(void);
-
-uint16_t rx_buffer_write_ptr_addr(void);
-
-void rx_buffer_dump(FILE * file, uint16_t start_addr, uint16_t end_addr);
-
 #endif
 
 /* --- EOF ------------------------------------------------------------------ */

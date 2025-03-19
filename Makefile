@@ -21,18 +21,11 @@ LIBS := -lloragw -lrt -lm
 ### general build targets
 
 all: 	libloragw.a \
-		test_loragw_com \
-		test_loragw_reg \
+		libloragw.dll \
 		test_loragw_hal_tx \
 		test_loragw_hal_rx \
-		test_loragw_capture_ram \
-		test_loragw_com_sx1250 \
-		test_loragw_com_sx1261 \
-		test_loragw_counter \
 		test_loragw_sx1261_rssi \
-		chip_id \
-		spectral_scan
-
+		chip_id
 clean:
 	rm -f libloragw.a
 	rm -f test_loragw_*
@@ -59,7 +52,6 @@ libloragw.a: $(OBJDIR)/loragw_com.o \
 			 $(OBJDIR)/loragw_sx1261.o \
 			 $(OBJDIR)/loragw_sx1302.o \
 			 $(OBJDIR)/loragw_hal.o \
-			 $(OBJDIR)/loragw_lbt.o \
 			 $(OBJDIR)/loragw_sx1302_timestamp.o \
 			 $(OBJDIR)/loragw_sx1302_rx.o \
 			 $(OBJDIR)/serial_port.o
@@ -75,7 +67,6 @@ libloragw.dll: $(OBJDIR)/loragw_com.o \
 			 $(OBJDIR)/loragw_sx1261.o \
 			 $(OBJDIR)/loragw_sx1302.o \
 			 $(OBJDIR)/loragw_hal.o \
-			 $(OBJDIR)/loragw_lbt.o \
 			 $(OBJDIR)/loragw_sx1302_timestamp.o \
 			 $(OBJDIR)/loragw_sx1302_rx.o \
 			 $(OBJDIR)/serial_port.o
@@ -83,37 +74,16 @@ libloragw.dll: $(OBJDIR)/loragw_com.o \
 
 ### test programs
 
-test_loragw_com: tst/test_loragw_com.c libloragw.a
-	$(CC) $(CFLAGS) -L. -L../libtools $< -o $@ $(LIBS)
-
-test_loragw_reg: tst/test_loragw_reg.c libloragw.a
-	$(CC) $(CFLAGS) -L. -L../libtools $< -o $@ $(LIBS)
-
 test_loragw_hal_tx: tst/test_loragw_hal_tx.c libloragw.a
 	$(CC) $(CFLAGS) -L. -L../libtools $< -o $@ $(LIBS)
 
 test_loragw_hal_rx: tst/test_loragw_hal_rx.c libloragw.a
 	$(CC) $(CFLAGS) -L. -L../libtools $< -o $@ $(LIBS)
 
-test_loragw_capture_ram: tst/test_loragw_capture_ram.c libloragw.a
-	$(CC) $(CFLAGS) -L. -L../libtools  $< -o $@ $(LIBS)
-
-test_loragw_com_sx1250: tst/test_loragw_com_sx1250.c libloragw.a
-	$(CC) $(CFLAGS) -L. -L../libtools  $< -o $@ $(LIBS)
-
-test_loragw_com_sx1261: tst/test_loragw_com_sx1261.c libloragw.a
-	$(CC) $(CFLAGS) -L. -L../libtools  $< -o $@ $(LIBS)
-
-test_loragw_counter: tst/test_loragw_counter.c libloragw.a
-	$(CC) $(CFLAGS) -L. -L../libtools  $< -o $@ $(LIBS)
-
 test_loragw_sx1261_rssi: tst/test_loragw_sx1261_rssi.c libloragw.a
 	$(CC) $(CFLAGS) -L. -L../libtools  $< -o $@ $(LIBS)
 
 chip_id: tst/chip_id.c libloragw.a
-	$(CC) $(CFLAGS) -L. -L../libtools  $< -o $@ $(LIBS)
-
-spectral_scan: tst/spectral_scan.c libloragw.a
 	$(CC) $(CFLAGS) -L. -L../libtools  $< -o $@ $(LIBS)
 
 ### EOF

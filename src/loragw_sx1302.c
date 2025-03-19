@@ -400,7 +400,7 @@ int sx1302_radio_clock_select(uint8_t rf_chain) {
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-int sx1302_radio_reset(uint8_t rf_chain, lgw_radio_type_t type) {
+int sx1302_radio_reset(uint8_t rf_chain) {
     uint16_t reg_radio_en;
     uint16_t reg_radio_rst;
     int err = LGW_REG_SUCCESS;
@@ -409,10 +409,6 @@ int sx1302_radio_reset(uint8_t rf_chain, lgw_radio_type_t type) {
     if (rf_chain >= LGW_RF_CHAIN_NB)
     {
         DEBUG_MSG("ERROR: invalid RF chain\n");
-        return LGW_REG_ERROR;
-    }
-    if (type != LGW_RADIO_TYPE_SX1250){
-        DEBUG_MSG("ERROR: invalid radio type\n");
         return LGW_REG_ERROR;
     }
 
@@ -429,15 +425,11 @@ int sx1302_radio_reset(uint8_t rf_chain, lgw_radio_type_t type) {
     wait_ms(500);
     err |= lgw_reg_w(reg_radio_rst, 0x00);
     wait_ms(10);
-    switch (type) {
-        case LGW_RADIO_TYPE_SX1250:
-            err |= lgw_reg_w(reg_radio_rst, 0x01);
-            wait_ms(10); /* wait for auto calibration to complete */
-            DEBUG_PRINTF("INFO: reset sx1250 (RADIO_%s) done\n", REG_SELECT(rf_chain, "A", "B"));
-            break;
-        default:
-            return LGW_REG_ERROR;
-    }
+
+    err |= lgw_reg_w(reg_radio_rst, 0x01);
+    wait_ms(10); /* wait for auto calibration to complete */
+    DEBUG_PRINTF("INFO: reset sx1250 (RADIO_%s) done\n", REG_SELECT(rf_chain, "A", "B"));
+
 
     /* Check if something went wrong */
     if (err != LGW_REG_SUCCESS) {
@@ -450,7 +442,7 @@ int sx1302_radio_reset(uint8_t rf_chain, lgw_radio_type_t type) {
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-int sx1302_radio_set_mode(uint8_t rf_chain, lgw_radio_type_t type) {
+int sx1302_radio_set_mode(uint8_t rf_chain) {
     uint16_t reg;
     int err;
 
@@ -459,24 +451,14 @@ int sx1302_radio_set_mode(uint8_t rf_chain, lgw_radio_type_t type) {
         DEBUG_MSG("ERROR: invalid RF chain\n");
         return LGW_REG_ERROR;
     }
-    if (type != LGW_RADIO_TYPE_SX1250) {
-        DEBUG_MSG("ERROR: invalid radio type\n");
-        return LGW_REG_ERROR;
-    }
 
     /* Set the radio mode */
     reg = REG_SELECT(rf_chain,  SX1302_REG_COMMON_CTRL0_SX1261_MODE_RADIO_A,
                                 SX1302_REG_COMMON_CTRL0_SX1261_MODE_RADIO_B);
-    switch (type) {
-        case LGW_RADIO_TYPE_SX1250:
-            DEBUG_PRINTF("Setting rf_chain_%u in sx1250 mode\n", rf_chain);
-            err = lgw_reg_w(reg, 0x01);
-            break;
-        default:
-            DEBUG_PRINTF("Setting rf_chain_%u in sx125x mode\n", rf_chain);
-            err = lgw_reg_w(reg, 0x00);
-            break;
-    }
+
+    DEBUG_PRINTF("Setting rf_chain_%u in sx1250 mode\n", rf_chain);
+    err = lgw_reg_w(reg, 0x01);
+
     if (err != LGW_REG_SUCCESS) {
         printf("ERROR: failed to set mode for radio %u\n", rf_chain);
         return LGW_REG_ERROR;
@@ -493,20 +475,20 @@ int sx1302_radio_host_ctrl(bool host_ctrl) {
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-int sx1302_radio_calibrate(struct lgw_conf_rxrf_s * context_rf_chain, uint8_t clksrc, struct lgw_tx_gain_lut_s * txgain_lut) {
+int sx1302_radio_calibrate(struct lgw_conf_rxrf_s * context_rf_chain, uint8_t clksrc) {
     int i;
     int err = LGW_REG_SUCCESS;
 
     /* -- Reset radios */
     for (i = 0; i < LGW_RF_CHAIN_NB; i++) {
         if (context_rf_chain[i].enable == true) {
-            err = sx1302_radio_reset(i, context_rf_chain[i].type);
+            err = sx1302_radio_reset(i);
             if (err != LGW_REG_SUCCESS) {
                 printf("ERROR: failed to reset radio %d\n", i);
                 return LGW_REG_ERROR;
             }
 
-            err = sx1302_radio_set_mode(i, context_rf_chain[i].type);
+            err = sx1302_radio_set_mode(i);
             if (err != LGW_REG_SUCCESS) {
                 printf("ERROR: failed to set radio %d mode\n", i);
                 return LGW_REG_ERROR;
@@ -548,14 +530,9 @@ int sx1302_pa_lna_lut_configure(struct lgw_conf_board_s * context_board) {
     int err = LGW_REG_SUCCESS;
 
     /* Configure LUT Table A */
-    if (context_board->full_duplex == true) {
-        err |= lgw_reg_w(SX1302_REG_AGC_MCU_LUT_TABLE_A_PA_LUT, 0x0C);     /* Enable PA: RADIO_CTRL[2] is high when PA_EN=1 */
-        err |= lgw_reg_w(SX1302_REG_AGC_MCU_LUT_TABLE_A_LNA_LUT, 0x0F);    /* Enable LNA: RADIO_CTRL[1] is always high */
-    } else {
-        err |= lgw_reg_w(SX1302_REG_AGC_MCU_LUT_TABLE_A_PA_LUT, 0x04);     /* Enable PA: RADIO_CTRL[2] is high when PA_EN=1 */
-        err |= lgw_reg_w(SX1302_REG_AGC_MCU_LUT_TABLE_A_LNA_LUT, 0x02);    /* Enable LNA: RADIO_CTRL[1] is high when PA_EN=0 & LNA_EN=1 */
-    }
-
+    err |= lgw_reg_w(SX1302_REG_AGC_MCU_LUT_TABLE_A_PA_LUT, 0x04);     /* Enable PA: RADIO_CTRL[2] is high when PA_EN=1 */
+    err |= lgw_reg_w(SX1302_REG_AGC_MCU_LUT_TABLE_A_LNA_LUT, 0x02);    /* Enable LNA: RADIO_CTRL[1] is high when PA_EN=0 & LNA_EN=1 */
+    
     /* Configure LUT Table B */
     err |= lgw_reg_w(SX1302_REG_AGC_MCU_LUT_TABLE_B_PA_LUT, 0x04);         /* Enable PA: RADIO_CTRL[8] is high when PA_EN=1 & LNA_EN=0 */
     err |= lgw_reg_w(SX1302_REG_AGC_MCU_LUT_TABLE_B_LNA_LUT, 0x02);        /* Enable LNA: RADIO_CTRL[7] is high when PA_EN=0 & LNA_EN=1 */
@@ -1251,17 +1228,11 @@ int sx1302_agc_mailbox_write(uint8_t mailbox, uint8_t value) {
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-int sx1302_agc_start(uint8_t version, lgw_radio_type_t radio_type, uint8_t ana_gain, uint8_t dec_gain, bool full_duplex, bool lbt_enable) {
+int sx1302_agc_start(uint8_t version, uint8_t ana_gain, uint8_t dec_gain) {
     uint8_t val;
     struct agc_gain_params_s agc_params;
     uint8_t pa_start_delay;
-    uint8_t fdd_mode = ((full_duplex == true) ? 1 : 0);
-
-    /* Check parameters */
-    if (radio_type != LGW_RADIO_TYPE_SX1250) {
-        DEBUG_MSG("ERROR: invalid radio type\n");
-        return LGW_REG_ERROR;
-    }
+    uint8_t fdd_mode = 0;
 
     /* Wait for AGC fw to be started, and VERSION available in mailbox */
     sx1302_agc_wait_status(0x01); /* fw has started, VERSION is ready in mailbox */
@@ -1278,10 +1249,8 @@ int sx1302_agc_start(uint8_t version, lgw_radio_type_t radio_type, uint8_t ana_g
     /* Configure Radio A gains */
     sx1302_agc_mailbox_write(0, ana_gain); /* 0:auto agc*/
     sx1302_agc_mailbox_write(1, dec_gain);
-    if (radio_type != LGW_RADIO_TYPE_SX1250) {
-        printf("AGC: setting fdd_mode to %u\n", fdd_mode);
-        sx1302_agc_mailbox_write(2, fdd_mode);
-    }
+    printf("AGC: setting fdd_mode to %u\n", fdd_mode);
+    sx1302_agc_mailbox_write(2, fdd_mode);
 
     /* notify AGC that gains has been set to mailbox for Radio A */
     sx1302_agc_mailbox_write(3, AGC_RADIO_A_INIT_DONE);
@@ -1317,9 +1286,7 @@ int sx1302_agc_start(uint8_t version, lgw_radio_type_t radio_type, uint8_t ana_g
     /* Configure Radio B gains */
     sx1302_agc_mailbox_write(0, ana_gain); /* 0:auto agc*/
     sx1302_agc_mailbox_write(1, dec_gain);
-    if (radio_type != LGW_RADIO_TYPE_SX1250) {
-        sx1302_agc_mailbox_write(2, fdd_mode);
-    }
+    sx1302_agc_mailbox_write(2, fdd_mode);
 
     /* notify AGC that gains has been set to mailbox for Radio B */
     sx1302_agc_mailbox_write(3, AGC_RADIO_B_INIT_DONE);
@@ -1353,7 +1320,7 @@ int sx1302_agc_start(uint8_t version, lgw_radio_type_t radio_type, uint8_t ana_g
     /* -----------------------------------------------------------------------*/
 
     /* Configure AGC gains */
-    agc_params = (radio_type == LGW_RADIO_TYPE_SX1250) ? agc_params_sx1250 : agc_params_sx125x;
+    agc_params = agc_params_sx1250;
 
     /* Configure analog gain min/max */
     sx1302_agc_mailbox_write(0, agc_params.ana_min);
@@ -1518,36 +1485,35 @@ int sx1302_agc_start(uint8_t version, lgw_radio_type_t radio_type, uint8_t ana_g
     /* -----------------------------------------------------------------------*/
 
     /* Configure sx1250 SetPAConfig */
-    if (radio_type == LGW_RADIO_TYPE_SX1250) {
-        sx1302_agc_mailbox_write(0, agc_params.deviceSel);
-        sx1302_agc_mailbox_write(1, agc_params.hpMax);
-        sx1302_agc_mailbox_write(2, agc_params.paDutyCycle);
+    sx1302_agc_mailbox_write(0, agc_params.deviceSel);
+    sx1302_agc_mailbox_write(1, agc_params.hpMax);
+    sx1302_agc_mailbox_write(2, agc_params.paDutyCycle);
 
-        /* notify AGC that params have been set to mailbox */
-        sx1302_agc_mailbox_write(3, 0x09);
+    /* notify AGC that params have been set to mailbox */
+    sx1302_agc_mailbox_write(3, 0x09);
 
-        /* Wait for AGC to acknoledge it has received params */
-        sx1302_agc_wait_status(0x0A);
+    /* Wait for AGC to acknoledge it has received params */
+    sx1302_agc_wait_status(0x0A);
 
-        /* Check params */
-        sx1302_agc_mailbox_read(0, &val);
-        if (val != agc_params.deviceSel) {
-            printf("ERROR: wrong deviceSel (w:%u r:%u)\n", agc_params.deviceSel, val);
-            return LGW_REG_ERROR;
-        }
-        sx1302_agc_mailbox_read(1, &val);
-        if (val != agc_params.hpMax) {
-            printf("ERROR: wrong hpMax (w:%u r:%u)\n", agc_params.hpMax, val);
-            return LGW_REG_ERROR;
-        }
-        sx1302_agc_mailbox_read(2, &val);
-        if (val != agc_params.paDutyCycle) {
-            printf("ERROR: wrong paDutyCycle (w:%u r:%u)\n", agc_params.paDutyCycle, val);
-            return LGW_REG_ERROR;
-        }
-
-        DEBUG_MSG("AGC: config of sx1250 PA optimal settings done\n");
+    /* Check params */
+    sx1302_agc_mailbox_read(0, &val);
+    if (val != agc_params.deviceSel) {
+         printf("ERROR: wrong deviceSel (w:%u r:%u)\n", agc_params.deviceSel, val);
+        return LGW_REG_ERROR;
     }
+    sx1302_agc_mailbox_read(1, &val);
+    if (val != agc_params.hpMax) {
+        printf("ERROR: wrong hpMax (w:%u r:%u)\n", agc_params.hpMax, val);
+        return LGW_REG_ERROR;
+    }
+    sx1302_agc_mailbox_read(2, &val);
+    if (val != agc_params.paDutyCycle) {
+        printf("ERROR: wrong paDutyCycle (w:%u r:%u)\n", agc_params.paDutyCycle, val);
+        return LGW_REG_ERROR;
+    }
+
+    DEBUG_MSG("AGC: config of sx1250 PA optimal settings done\n");
+    
 
     /* -----------------------------------------------------------------------*/
 
@@ -1573,7 +1539,7 @@ int sx1302_agc_start(uint8_t version, lgw_radio_type_t radio_type, uint8_t ana_g
     /* -----------------------------------------------------------------------*/
 
     /* Enable LBT if required */
-    sx1302_agc_mailbox_write(0, (lbt_enable == true) ? 1 : 0);
+    sx1302_agc_mailbox_write(0, 0);
 
     /* notify AGC that params have been set to mailbox */
     sx1302_agc_mailbox_write(3, 0x0B);
@@ -1583,12 +1549,6 @@ int sx1302_agc_start(uint8_t version, lgw_radio_type_t radio_type, uint8_t ana_g
 
      /* Check params */
     sx1302_agc_mailbox_read(0, &val);
-    if ((bool)val != lbt_enable) {
-        printf("ERROR: wrong LBT configuration (w:%u r:%u)\n", lbt_enable, val);
-        return LGW_REG_ERROR;
-    }
-
-    DEBUG_PRINTF("AGC: LBT is %s\n", (lbt_enable == true) ? "enabled" : "disabled");
 
     /* -----------------------------------------------------------------------*/
 
@@ -1958,35 +1918,6 @@ int sx1302_parse(lgw_context_t * context, struct lgw_pkt_rx_s * p) {
             p->status = STAT_NO_CRC;
         }
 
-#if 0
-        int i;
-        /* FOR DEBUG: Check data integrity for known devices (debug context) */
-        if (p->status == STAT_CRC_OK || p->status == STAT_NO_CRC) {
-            /*  We compare the received payload with predefined ones to ensure that the payload content is what we expect.
-                4 bytes: ID to identify the payload
-                4 bytes: packet counter used to initialize the seed for pseudo-random generation
-                x bytes: pseudo-random payload
-            */
-            int res;
-            for (i = 0; i < context->debug_cfg.nb_ref_payload; i++) {
-                res = dbg_check_payload(&(context->debug_cfg), log_file, p->payload, p->size, i, pkt.rx_rate_sf);
-                if (res == -1) {
-                    printf("ERROR: 0x%08X payload error\n", context->debug_cfg.ref_payload[i].id);
-                    if (log_file != NULL) {
-                        fprintf(log_file, "ERROR: 0x%08X payload error\n", context->debug_cfg.ref_payload[i].id);
-                        dbg_log_buffer_to_file(log_file, rx_buffer.buffer, rx_buffer.buffer_size);
-                        dbg_log_payload_diff_to_file(log_file, p->payload, context->debug_cfg.ref_payload[i].payload, p->size);
-                    }
-                    return LGW_REG_ERROR;
-                } else if (res == 1) {
-                    DEBUG_PRINTF("0x%08X payload matches\n", context->debug_cfg.ref_payload[i].id);
-                } else {
-                    /* Do nothing */
-                }
-            }
-        }
-#endif
-
         /* Get SNR - converted from 0.25dB step to dB */
         p->snr = (float)(pkt.snr_average) / 4;
 
@@ -2125,29 +2056,6 @@ int sx1302_parse(lgw_context_t * context, struct lgw_pkt_rx_s * p) {
     /* Expand 27-bits counter to 32-bits counter, based on current wrapping status (updated after fetch) */
     p->count_us = timestamp_pkt_expand(&counter_us, p->count_us);
 
-
-#if 0 // debug code to check for failed submicros/micros handling
-    {
-        static uint32_t last_valid = 0;
-        static uint32_t last_us32 = 0;
-        static uint32_t last_pkt_num;
-        int32_t diff = p->count_us - last_us32;
-        uint32_t pkt_num = (p->payload[4] << 24) | (p->payload[5] << 16) | (p->payload[6] << 8) | (p->payload[7] << 0);
-
-        printf("XXXXXXXXXXXXXXXX inst - ref=%u wrap=%u\n", counter_us.inst.counter_us_27bits_ref, counter_us.inst.counter_us_27bits_wrap);
-        printf("XXXXXXXXXXXXXXXX pps  - ref=%u wrap=%u\n", counter_us.pps.counter_us_27bits_ref, counter_us.pps.counter_us_27bits_wrap);
-        printf("XXXXXXXXXXXXXXXX pkt=%u (%u) last=%u diff=%d\n", p->count_us, pkt.timestamp_cnt / 32, last_us32, diff);
-        printf("XXXXXXXXXXXXXXXX pkt num=%u\n", pkt_num);
-        if (last_valid && (diff > 30000000) && (pkt_num == (last_pkt_num + 1))) {
-            printf("XXXXXXXXXXXXXXXX ERROR jump ahead count_us\n");
-            exit(1);
-        }
-        last_us32 = p->count_us;
-        last_pkt_num = pkt_num;
-        last_valid = 1;
-    }
-#endif
-
     /* Packet timestamp corrected */
     p->count_us = p->count_us + timestamp_correction;
 
@@ -2175,7 +2083,7 @@ uint16_t sx1302_lora_payload_crc(const uint8_t * data, uint8_t size) {
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-int sx1302_tx_set_start_delay(uint8_t rf_chain, lgw_radio_type_t radio_type, uint8_t modulation, uint8_t bandwidth, uint8_t chirp_lowpass, uint16_t * delay) {
+int sx1302_tx_set_start_delay(uint8_t rf_chain, uint8_t modulation, uint8_t bandwidth, uint8_t chirp_lowpass, uint16_t * delay) {
     int err;
     uint16_t tx_start_delay = TX_START_DELAY_DEFAULT * 32;
     uint16_t radio_bw_delay = 0;
@@ -2193,22 +2101,15 @@ int sx1302_tx_set_start_delay(uint8_t rf_chain, lgw_radio_type_t radio_type, uin
     }
 
     /* Adjust with radio type and bandwidth */
-    switch (radio_type) {
-        case LGW_RADIO_TYPE_SX1250:
-            if (bandwidth == BW_125KHZ) {
-                radio_bw_delay = 19;
-            } else if (bandwidth == BW_250KHZ) {
-                radio_bw_delay = 24;
-            } else if (bandwidth == BW_500KHZ) {
-                radio_bw_delay = 21;
-            } else {
-                DEBUG_MSG("ERROR: bandwidth not supported\n");
-                return LGW_REG_ERROR;
-            }
-            break;
-        default:
-            DEBUG_MSG("ERROR: radio type not supported\n");
-            return LGW_REG_ERROR;
+    if (bandwidth == BW_125KHZ) {
+        radio_bw_delay = 19;
+    } else if (bandwidth == BW_250KHZ) {
+        radio_bw_delay = 24;
+    } else if (bandwidth == BW_500KHZ) {
+        radio_bw_delay = 21;
+    } else {
+        DEBUG_MSG("ERROR: bandwidth not supported\n");
+        return LGW_REG_ERROR;
     }
 
     /* Adjust with modulation */
@@ -2316,24 +2217,17 @@ int sx1302_tx_abort(uint8_t rf_chain) {
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-int sx1302_tx_configure(lgw_radio_type_t radio_type) {
+int sx1302_tx_configure(void) {
     int err = LGW_REG_SUCCESS;
 
     /* Select the TX destination interface */
-    switch (radio_type) {
-        case LGW_RADIO_TYPE_SX1250:
-            /* Let AGC control PLL DIV (sx1250 only) */
-            err |= lgw_reg_w(SX1302_REG_TX_TOP_A_TX_RFFE_IF_CTRL2_PLL_DIV_CTRL_AGC, 1);
-            err |= lgw_reg_w(SX1302_REG_TX_TOP_B_TX_RFFE_IF_CTRL2_PLL_DIV_CTRL_AGC, 1);
+    /* Let AGC control PLL DIV (sx1250 only) */
+    err |= lgw_reg_w(SX1302_REG_TX_TOP_A_TX_RFFE_IF_CTRL2_PLL_DIV_CTRL_AGC, 1);
+    err |= lgw_reg_w(SX1302_REG_TX_TOP_B_TX_RFFE_IF_CTRL2_PLL_DIV_CTRL_AGC, 1);
 
-            /* SX126x Tx RFFE */
-            err |= lgw_reg_w(SX1302_REG_TX_TOP_A_TX_RFFE_IF_CTRL_TX_IF_DST, 0x01);
-            err |= lgw_reg_w(SX1302_REG_TX_TOP_B_TX_RFFE_IF_CTRL_TX_IF_DST, 0x01);
-            break;
-        default:
-            DEBUG_MSG("ERROR: radio type not supported\n");
-            return LGW_REG_ERROR;
-    }
+    /* SX126x Tx RFFE */
+    err |= lgw_reg_w(SX1302_REG_TX_TOP_A_TX_RFFE_IF_CTRL_TX_IF_DST, 0x01);
+    err |= lgw_reg_w(SX1302_REG_TX_TOP_B_TX_RFFE_IF_CTRL_TX_IF_DST, 0x01);
 
     /* Configure the TX mode of operation */
     err |= lgw_reg_w(SX1302_REG_TX_TOP_A_TX_RFFE_IF_CTRL_TX_MODE, 0x01); /* Modulation */
@@ -2348,7 +2242,7 @@ int sx1302_tx_configure(lgw_radio_type_t radio_type) {
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-int sx1302_send(lgw_radio_type_t radio_type, struct lgw_tx_gain_lut_s * tx_lut, bool lwan_public, struct lgw_conf_rxif_s * context_fsk, struct lgw_pkt_tx_s * pkt_data) {
+int sx1302_send(bool lwan_public, struct lgw_conf_rxif_s * context_fsk, struct lgw_pkt_tx_s * pkt_data) {
     int err;
     uint32_t freq_reg, fdev_reg;
     uint32_t freq_dev;
@@ -2359,7 +2253,6 @@ int sx1302_send(lgw_radio_type_t radio_type, struct lgw_tx_gain_lut_s * tx_lut, 
     uint8_t power;
     uint8_t pow_index;
     uint8_t mod_bw;
-    uint8_t pa_en;
     uint16_t tx_start_delay;
     uint8_t chirp_lowpass = 0;
     uint8_t buff[2]; /* for 16-bits register write operation */
@@ -2370,7 +2263,6 @@ int sx1302_send(lgw_radio_type_t radio_type, struct lgw_tx_gain_lut_s * tx_lut, 
     _meas_time_start(&tm);
 
     /* Check input parameters */
-    CHECK_NULL(tx_lut);
     CHECK_NULL(pkt_data);
 
     /* Setting BULK write mode (to speed up configuration on USB) */
@@ -2402,37 +2294,20 @@ int sx1302_send(lgw_radio_type_t radio_type, struct lgw_tx_gain_lut_s * tx_lut, 
             return LGW_REG_ERROR;
     }
 
-    /* Find the proper index in the TX gain LUT according to requested rf_power */
-    for (pow_index = tx_lut->size-1; pow_index > 0; pow_index--) {
-        if (tx_lut->lut[pow_index].rf_power <= pkt_data->rf_power) {
-            break;
-        }
-    }
-    DEBUG_PRINTF("INFO: selecting TX Gain LUT index %u\n", pow_index);
-
     /* loading calibrated Tx DC offsets */
-    err = lgw_reg_w(SX1302_REG_TX_TOP_TX_RFFE_IF_I_OFFSET_I_OFFSET(pkt_data->rf_chain), tx_lut->lut[pow_index].offset_i);
+    err = lgw_reg_w(SX1302_REG_TX_TOP_TX_RFFE_IF_I_OFFSET_I_OFFSET(pkt_data->rf_chain), 0);
     CHECK_ERR(err);
-    err = lgw_reg_w(SX1302_REG_TX_TOP_TX_RFFE_IF_Q_OFFSET_Q_OFFSET(pkt_data->rf_chain), tx_lut->lut[pow_index].offset_q);
+    err = lgw_reg_w(SX1302_REG_TX_TOP_TX_RFFE_IF_Q_OFFSET_Q_OFFSET(pkt_data->rf_chain), 0);
     CHECK_ERR(err);
-
-    DEBUG_PRINTF("INFO: Applying IQ offset (i:%d, q:%d)\n", tx_lut->lut[pow_index].offset_i, tx_lut->lut[pow_index].offset_q);
 
     /* Set the power parameters to be used for TX */
-    switch (radio_type) {
-        case LGW_RADIO_TYPE_SX1250:
-            pa_en = (tx_lut->lut[pow_index].pa_gain > 0) ? 1 : 0; /* only 1 bit used to control the external PA */
-            power = (pa_en << 6) | tx_lut->lut[pow_index].pwr_idx;
-            break;
-        default:
-            DEBUG_MSG("ERROR: radio type not supported\n");
-            return LGW_REG_ERROR;
-    }
+    power = pow_index;
+
     err = lgw_reg_w(SX1302_REG_TX_TOP_AGC_TX_PWR_AGC_TX_PWR(pkt_data->rf_chain), power);
     CHECK_ERR(err);
 
     /* Set digital gain */
-    err = lgw_reg_w(SX1302_REG_TX_TOP_TX_RFFE_IF_IQ_GAIN_IQ_GAIN(pkt_data->rf_chain), tx_lut->lut[pow_index].dig_gain);
+    err = lgw_reg_w(SX1302_REG_TX_TOP_TX_RFFE_IF_IQ_GAIN_IQ_GAIN(pkt_data->rf_chain), 0);
     CHECK_ERR(err);
 
     /* Set Tx frequency */
@@ -2672,7 +2547,7 @@ int sx1302_send(lgw_radio_type_t radio_type, struct lgw_tx_gain_lut_s * tx_lut, 
     }
 
     /* Set TX start delay */
-    err = sx1302_tx_set_start_delay(pkt_data->rf_chain, radio_type, pkt_data->modulation, pkt_data->bandwidth, chirp_lowpass, &tx_start_delay);
+    err = sx1302_tx_set_start_delay(pkt_data->rf_chain, pkt_data->modulation, pkt_data->bandwidth, chirp_lowpass, &tx_start_delay);
     CHECK_ERR(err);
 
     /* Write payload in transmit buffer */

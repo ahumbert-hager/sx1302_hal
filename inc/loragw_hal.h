@@ -138,22 +138,12 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 /* --- PUBLIC TYPES --------------------------------------------------------- */
 
 /**
-@enum lgw_radio_type_t
-@brief Radio types that can be found on the LoRa Gateway
-*/
-typedef enum {
-    LGW_RADIO_TYPE_SX1250
-} lgw_radio_type_t;
-
-/**
 @struct lgw_conf_board_s
 @brief Configuration structure for board specificities
 */
 struct lgw_conf_board_s {
     bool            lorawan_public; /*!> Enable ONLY for *public* networks using the LoRa MAC protocol */
     uint8_t         clksrc;         /*!> Index of RF chain which provides clock to concentrator */
-    bool            full_duplex;    /*!> Indicates if the gateway operates in full duplex mode or not */
-    lgw_com_type_t  com_type;       /*!> The COMmunication interface (SPI/USB) to connect to the SX1302 */
     char            com_path[64];   /*!> Path to access the COM device to connect to the SX1302 */
 };
 
@@ -178,7 +168,6 @@ struct lgw_conf_rxrf_s {
     uint32_t                freq_hz;            /*!> center frequency of the radio in Hz */
     float                   rssi_offset;        /*!> Board-specific RSSI correction factor */
     struct lgw_rssi_tcomp_s rssi_tcomp;         /*!> Board-specific RSSI temperature compensation coefficients */
-    lgw_radio_type_t        type;               /*!> Radio type for that RF chain (SX1255, SX1257....) */
     bool                    tx_enable;          /*!> enable or disable TX on that RF chain */
     bool                    single_input_mode;  /*!> Configure the radio in single or differential input mode (SX1250 only) */
 };
@@ -262,31 +251,6 @@ struct lgw_pkt_tx_s {
 };
 
 /**
-@struct lgw_tx_gain_s
-@brief Structure containing all gains of Tx chain
-*/
-struct lgw_tx_gain_s {
-    int8_t  rf_power;   /*!> measured TX power at the board connector, in dBm */
-    uint8_t dig_gain;   /*!> (sx125x) 2 bits: control of the digital gain of SX1302 */
-    uint8_t pa_gain;    /*!> (sx125x) 2 bits: control of the external PA (SX1302 I/O)
-                             (sx1250) 1 bits: enable/disable the external PA (SX1302 I/O) */
-    uint8_t dac_gain;   /*!> (sx125x) 2 bits: control of the radio DAC */
-    uint8_t mix_gain;   /*!> (sx125x) 4 bits: control of the radio mixer */
-    int8_t offset_i;    /*!> (sx125x) calibrated I offset */
-    int8_t offset_q;    /*!> (sx125x) calibrated Q offset */
-    uint8_t pwr_idx;    /*!> (sx1250) 6 bits: control the radio power index to be used for configuration */
-};
-
-/**
-@struct lgw_tx_gain_lut_s
-@brief Structure defining the Tx gain LUT
-*/
-struct lgw_tx_gain_lut_s {
-    struct lgw_tx_gain_s    lut[TX_GAIN_LUT_SIZE_MAX];  /*!> Array of Tx gain struct */
-    uint8_t                 size;                       /*!> Number of LUT indexes */
-};
-
-/**
 @struct lgw_conf_debug_s
 @brief Configuration structure for debug
 */
@@ -294,11 +258,6 @@ struct conf_ref_payload_s {
     uint32_t id;
     uint8_t payload[255];
     uint32_t prev_cnt;
-};
-struct lgw_conf_debug_s {
-    uint8_t                     nb_ref_payload;
-    struct conf_ref_payload_s   ref_payload[16];
-    char log_file_name[128];
 };
 
 /**
@@ -374,13 +333,9 @@ typedef struct lgw_context_s {
     struct lgw_conf_demod_s     demod_cfg;
     struct lgw_conf_rxif_s      lora_service_cfg;                       /* LoRa service channel config parameters */
     struct lgw_conf_rxif_s      fsk_cfg;                                /* FSK channel config parameters */
-    /* TX context */
-    struct lgw_tx_gain_lut_s    tx_gain_lut[LGW_RF_CHAIN_NB];
     /* Misc */
     struct lgw_conf_ftime_s     ftime_cfg;
     struct lgw_conf_sx1261_s    sx1261_cfg;
-    /* Debug */
-    struct lgw_conf_debug_s     debug_cfg;
 } lgw_context_t;
 
 /**
@@ -429,13 +384,6 @@ int lgw_rxif_setconf(uint8_t if_chain, struct lgw_conf_rxif_s * conf);
 int lgw_demod_setconf(struct lgw_conf_demod_s * conf);
 
 /**
-@brief Configure the Tx gain LUT
-@param conf pointer to structure defining the LUT
-@return LGW_HAL_ERROR id the operation failed, LGW_HAL_SUCCESS else
-*/
-int lgw_txgain_setconf(uint8_t rf_chain, struct lgw_tx_gain_lut_s * conf);
-
-/**
 @brief Configure the fine timestamping
 @param conf pointer to structure defining the config to be applied
 @return LGW_HAL_ERROR id the operation failed, LGW_HAL_SUCCESS else
@@ -448,13 +396,6 @@ int lgw_ftime_setconf(struct lgw_conf_ftime_s * conf);
 @return LGW_HAL_ERROR id the operation failed, LGW_HAL_SUCCESS else
 */
 int lgw_sx1261_setconf(struct lgw_conf_sx1261_s * conf);
-
-/**
-@brief Configure the debug context
-@param conf pointer to structure defining the config to be applied
-@return LGW_HAL_ERROR id the operation failed, LGW_HAL_SUCCESS else
-*/
-int lgw_debug_setconf(struct lgw_conf_debug_s * conf);
 
 /**
 @brief Connect to the LoRa concentrator, reset it and configure it according to previously set parameters
