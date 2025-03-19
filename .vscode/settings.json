@@ -1,0 +1,16 @@
+{
+    "files.associations": {
+        "loragw_aux.h": "c",
+        "loragw_sx1302_timestamp.h": "c",
+        "sx1250_com.h": "c",
+        "loragw_usb.h": "c",
+        "loragw_debug.h": "c",
+        "loragw_sx1250.h": "c",
+        "loragw_sx1302.h": "c",
+        "loragw_agc_params.h": "c",
+        "string.h": "c",
+        "sx1250_usb.h": "c",
+        "loragw_mcu.h": "c",
+        "serial_port.h": "c"
+    }
+}

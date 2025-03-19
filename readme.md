@@ -5,386 +5,498 @@
 	(______/|_____)_|_|_| \__)_____)\____)_| |_|
 	  (C)2020 Semtech
 
-SX1302 LoRa Gateway project
-===========================
+LoRa concentrator HAL user manual
+=================================
+
+## 1. Introduction
+
+The LoRa concentrator Hardware Abstraction Layer is a C library that allow you
+to use a Semtech concentrator chip through a reduced number of high level C
+functions to configure the hardware, send and receive packets.
+
+The Semtech LoRa concentrator is a digital multi-channel multi-standard packet
+radio used to send and receive packets wirelessly using LoRa or FSK modulations.
+
+## 2. Components of the library
+
+The library is composed of the following modules:
+
+1. abstraction layer
+  * loragw_hal
+  * loragw_reg
+  * loragw_aux
+  * loragw_cal
+  * loragw_lbt
+  * loragw_sx1302
+  * loragw_sx1302_rx
+  * loragw_sx1302_timestamp
+  * loragw_sx1250
+  * loragw_sx1261
+
+2. communication layer for sx1302
+  * loragw_com
+  * loragw_usb
+
+4. communication layer for sx1250 radios
+  * sx1250_com
+  * sx1250_usb
+
+5. communication layer for STM32 MCU (USB)
+  * loragw_mcu
+
+6. communication layer for sx1261 radio (LBT / Spectral Scan)
+  * sx1261_com
+  * sx1261_spi
+  * sx1261_usb
+
+7. peripherals
+  * loragw_i2c
+  * loragw_gps
+  * loragw_stts751
+
+The library also contains basic test programs to demonstrate code use and check
+functionality.
+
+### 2.1. loragw_hal
+
+This is the main module and contains the high level functions to configure and
+use the LoRa concentrator:
+
+* lgw_board_setconf, to set the configuration of the concentrator
+* lgw_rxrf_setconf, to set the configuration of the radio channels
+* lgw_rxif_setconf, to set the configuration of the IF+modem channels
+* lgw_txgain_setconf, to set the configuration of the concentrator gain table
+* lgw_start, to apply the set configuration to the hardware and start it
+* lgw_stop, to stop the hardware
+* lgw_receive, to fetch packets if any was received
+* lgw_send, to send a single packet (non-blocking, see warning in usage section)
+* lgw_status, to check when a packet has effectively been sent
+* lgw_get_trigcnt, to get the value of the sx1302 internal counter at last PPS
+* lgw_get_instcnt, to get the value of the sx1302 internal counter
+* lgw_get_eui, to get the sx1302 chip EUI
+* lgw_get_temperature, to get the current temperature
+* lgw_time_on_air, to get the Time On Air of a packet
+* lgw_spectral_scan_start, to start scaning a particular channel
+* lgw_spectral_scan_get_status, to get the status of the current scan
+* lgw_spectral_scan_get_results, to get the results of the completed scan
+* lgw_spectral_scan_abort, to abort curretn scan
+
+For an standard application, include only this module.
+The use of this module is detailed on the usage section.
+
+/!\ When sending a packet, there is a delay (approx 1.5ms) for the analog
+circuitry to start and be stable. This delay is adjusted by the HAL depending
+on the board version (lgw_i_tx_start_delay_us).
+
+In 'timestamp' mode, this is transparent: the modem is started
+lgw_i_tx_start_delay_us microseconds before the user-set timestamp value is
+reached, the preamble of the packet start right when the internal timestamp
+counter reach target value.
+
+In 'immediate' mode, the packet is emitted as soon as possible: transferring the
+packet (and its parameters) from the host to the concentrator takes some time,
+then there is the lgw_i_tx_start_delay_us, then the packet is emitted.
+
+In 'triggered' mode (aka PPS/GPS mode), the packet, typically a beacon, is
+emitted lgw_i_tx_start_delay_us microsenconds after a rising edge of the
+trigger signal. Because there is no way to anticipate the triggering event and
+start the analog circuitry beforehand, that delay must be taken into account in
+the protocol.
+
+### 2.2. loragw_reg
+
+This module is used to access to the LoRa concentrator registers by name instead
+of by address:
 
-## 1. Core library: libloragw
+* lgw_connect, to initialise and check the connection with the hardware
+* lgw_disconnect, to disconnect the hardware
+* lgw_reg_r, read a named register
+* lgw_reg_w, write a named register
+* lgw_reg_rb, read a name register in burst
+* lgw_reg_wb, write a named register in burst
+* lgw_mem_rb, read from a memory section in burst
+* lgw_mem_wb, write to a memory section in burst
 
-This directory contains the sources of the library to build a gateway based on
-a Semtech LoRa SX1302 concentrator chip (a.k.a. concentrator).
-Once compiled all the code is contained in the libloragw.a file that will be
-statically linked (ie. integrated in the final executable).
+This module handles read-only registers protection, multi-byte registers
+management, signed registers management, read-modify-write routines for
+sub-byte registers and read/write burst fragmentation to respect SPI/USB maximum
+burst length constraints.
 
-The library also comes with few basic tests programs that are used to test the
-different sub-modules of the library.
+It make the code much easier to read and to debug.
+Moreover, if registers are relocated between different hardware revisions but
+keep the same function, the code written using register names can be reused "as
+is".
 
-Please refer to the readme.md file located in the libloragw directory for
-more details.
+If you need access to all the registers, include this module in your
+application.
 
-## 2. Helper programs
+**/!\ Warning** please be sure to have a good understanding of the LoRa
+concentrator inner working before accessing the internal registers directly.
 
-Those programs are included in the project to provide examples on how to use
-the HAL library, and to help the system builder test different parts of it.
+### 2.3. loragw_com
 
-### 2.1. packet_forwarder ###
+This module contains the functions to access the LoRa concentrator register
+array through the SPI or USB interfaces:
 
-The packet forwarder is a program running on the host of a Lora gateway that
-forwards RF packets receive by the concentrator to a server through a IP/UDP
-link, and emits RF packets that are sent by the server.
+* lgw_com_r to read one byte
+* lgw_com_w to write one byte
+* lgw_com_rb to read two bytes or more
+* lgw_com_wb to write two bytes or more
 
-	((( Y )))
-	    |
-	    |
-	+- -|- - - - - - - - - - - - -+        xxxxxxxxxxxx          +--------+
-	|+--+-----------+     +------+|       xx x  x     xxx        |        |
-	||              | USB |      ||      xx  Internet  xx        |        |
-	|| Concentrator |<----+ Host |<------xx     or    xx-------->|        |
-	||              | SPI |      ||      xx  Intranet  xx        | Server |
-	|+--------------+     +------+|       xxxx   x   xxxx        |        |
-	|   ^                    ^    |           xxxxxxxx           |        |
-	|   | PPS  +-----+  NMEA |    |                              |        |
-	|   +------| GPS |-------+    |                              +--------+
-	|          +-----+            |
-	|                             |
-	|            Gateway          |
-	+- - - - - - - - - - - - - - -+
+This modules is an abstract interface, it then relies on the following modules
+to actually perform the interfacing:
 
-Uplink: radio packets received by the gateway, with metadata added by the
-gateway, forwarded to the server. Might also include gateway status.
+* loragw_spi : for SPI interface
+* loragw_usb : for USB interface
 
-Downlink: packets generated by the server, with additional metadata, to be
-transmitted by the gateway on the radio channel. Might also include
-configuration data for the gateway.
+Please *do not* include that module directly into your application.
 
-Please refer to the readme.md file located in the packet_forwarder directory
-for more details.
+**/!\ Warning** Accessing the LoRa concentrator register array without the
+checks and safety provided by the functions in loragw_reg is not recommended.
 
-### 2.2. util_net_downlink ###
+### 2.4. loragw_aux
 
-The downlink packet sender is a simple helper program listening on a single
-UDP port, responding to PUSH_DATA and PULL_DATA datagrams with proper ACK, and
-sending downlink JSON packets to the socket, with given frame parameters, at
-regular time interval.
-It is a network packet sender.
+This module contains a single host-dependant function wait_ms to pause for a
+defined amount of milliseconds.
 
-It can also be used as a UDP packet logger to store received uplinks in a
-local CSV file.
+The procedure to start and configure the LoRa concentrator hardware contained in
+the loragw_hal module requires to wait for several milliseconds at certain
+steps, typically to allow for supply voltages or clocks to stabilize after been
+switched on.
 
-Please refer to the readme.md file located in the util_net_downlink directory
-for more details.
+An accuracy of 1 ms or less is ideal.
+If your system does not allow that level of accuracy, make sure that the actual
+delay is *longer* that the time specified when the function is called (ie.
+wait_ms(X) **MUST NOT** before X milliseconds under any circumstance).
 
-### 2.3. util_chip_id ###
+If the minimum delays are not guaranteed during the configuration and start
+procedure, the hardware might not work at nominal performance.
+Most likely, it will not work at all.
 
-This utility configures the SX1302 to be able to retrieve its EUI. It can then
-be used as a Gateway ID.
+### 2.5. loragw_gps
 
-### 2.4. util_boot ###
+This module contains functions to synchronize the concentrator internal
+counter with an absolute time reference, in our case a GPS satellite receiver.
 
-On used for a USB gateway, this software switches the concentrator in DFU mode
-in order to program its internal STM32 MCU.
+The internal concentrator counter is used to timestamp incoming packets and to
+triggers outgoing packets with a microsecond accuracy.
+In some cases, it might be useful to be able to transform that internal
+timestamp (that is independent for each concentrator running in a typical
+networked system) into an absolute GPS time.
 
-### 2.5. util_spectral_scan ###
+In a typical implementation a GPS specific thread will be called, doing the
+following things after opening the serial port:
 
-This software allows to scan the spectral band using the additional sx1261 radio
-of the Semtech Corecell reference design.
+* blocking reads on the serial port (using system read() function)
+* parse UBX messages (using lgw_parse_ubx) to get actual native GPS time
+* parse NMEA sentences (using lgw_parse_nmea) to get location and UTC time
+Note: the RMC sentence gives UTC time, not native GPS time.
 
-## 3. Helper scripts
+And each time an NAV-TIMEGPS UBX message has been received:
 
-### 3.1. tools/reset_lgw.sh
+* get the concentrator timestamp (using lgw_get_trigcnt, mutex needed to
+  protect access to the concentrator)
+* get the GPS time contained in the UBX message (using lgw_gps_get)
+* call the lgw_gps_sync function (use mutex to protect the time reference that
+  should be a global shared variable).
 
-This script is used to perform the basic initialization of the SX1302 through
-the GPIOs defined by the CoreCell reference design.
-It gets the SX1302 out of reset and set the Power Enable pin.
-This script is called by every program provided here which accesses the SX1302.
-It MUST be located in the same directory as the executable of the program.
+Then, in other threads, you can simply used that continuously adjusted time
+reference to convert internal timestamps to GPS time (using lgw_cnt2gps) or
+the other way around (using lgw_gps2cnt). Inernal concentrator timestamp can
+also be converted to/from UTC time using lgw_cnt2utc/lgw_utc2cnt functions.
 
-## 4. Compile, install and run instructions
+### 2.6. loragw_sx125x
 
-All the libraries and test programs can be compiled and installed from the
-root directory of this project.
+This module contains functions to handle the configuration of SX1255 and
+SX1257 radios. In order to communicate with the radio, it relies on the
+following modules:
 
-### 4.1. Clean and compile everything
+* sx125x_com : abstract interfacing to select USB or SPI interface
+* sx125x_spi : implementation of the SPI interface
 
-`make clean all`
+### 2.7. loragw_sx1250
 
-### 4.2. Install executables and associated files in one directory
+This module contains functions to handle the configuration of SX1250 radios. In
+order to communicate with the radio, it relies on the following modules:
 
-First edit the target.cfg file located in the root directory of the project
-in order to configure where the executables have to be installed.
+* sx1250_com : abstract interfacing to select USB or SPI interface
+* sx1250_spi : implementation of the SPI interface
+* sx1250_usb : implementation of the USB interface
 
-`TARGET_IP` : sets the IP address of the host of the gateway. In case the
-project is compiled on the gateway host itself (Raspberry Pi...), this can
-be left set to `localhost`.
+### 2.8. loragw_sx1302
 
-`TARGET_DIR` : sets the directory on the gateway host file system in which
-the executables must be copied. Note that the directory MUST exist when
-invoking the install command.
+This module contains functions to abstract SX1302 concentrator capabilities.
 
-`TARGET_USR` : sets the linux user to be used to perform the SSH/SCP command
-for copying the executables.
+### 2.9. loragw_sx1302_rx
 
-In order to avoid entering the user password when installing the files, the
-following steps have to be followed.
+This module is a sub-module of the loragw_sx1302 module focusing on abstracting
+the RX buffer of the SX1302.
 
-Lets say you want to copy between two hosts host_src and host_dest (they can
-be the same). host_src is the host where you would run the scp command,
-irrespective of the direction of the file copy!
+### 2.10. loragw_sx1302_timestamp
 
-* On host_src, run this command as the user that runs scp<br/>
-`ssh-keygen -t rsa`
+This module is a sub-module of the loragw_sx1302 module focusing on abstracting
+the timestamp counter of the SX1302.
+It converts the 32-bits 32MHz internal counter of the SX1302 to a 32-bits 1MHz
+counter.
+This module needs to be called regularly by upper layers to maintain counter
+wrapping when converting from 32MHz to 1MHz.
+It also provides function to add correction to the timestamp counter to take
+into account the LoRa demodulation processing time.
 
-This will prompt for a passphrase. Just press the enter key. It'll then
-generate an identification (private key) and a public key. Do not ever share
-the private key with anyone! ssh-keygen shows where it saved the public key.
-This is by default ~/.ssh/id_rsa.pub
-* Transfer the id_rsa.pub file to host_dest<br/>
-`ssh-copy-id -i ~/.ssh/id_rsa.pub user@host_dest`
+### 2.11. loragw_stts751
 
-You should be able to log on host_dest without being asked for a password.
+This module contains a very basic driver for the STmicroelectronics ST751
+temperature sensor which is on the CoreCell reference design.
 
-Now that everything is set, the following command can be invoked:<br/>
-`make install`
+### 2.13. loragw_i2c
 
-In order to also install the packet forwarder JSON configuration files:<br/>
-`make install_conf`
+This module provides basic function to communicate with I2C devices on the board.
+It is used in this project for accessing the temperature sensor, the AD5338R DAC...
 
-### 4.3. Cross-compile from a PC
+### 2.14. loragw_sx1261
 
-* Add the path to the binaries of the compiler corresponding to the target
-platform to the `PATH` environment variable.
-* set the `ARCH` environment variable to `arm`.
-* set the `CROSS_COMPILE` environment variable to the prefix corresponding to
-the compiler for the target platform.
+This module contains functions to handle the configuration of SX1261 radio for
+Listen-Before-Talk or Spectral Scan functionnalities. In order to communicate
+with the radio, it relies on the following modules:
 
-An example for a Raspberry Pi target:
+* sx1261_com : abstract interfacing to select USB or SPI interface
+* sx1261_spi : implementation of the SPI interface
+* sx1261_usb : implementation of the USB interface
 
-* `export PATH=[path]/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/bin`
-* `export ARCH=arm`
-* `export CROSS_COMPILE=arm-linux-gnueabihf-`
+This module will also load the sx1261 firmware patch RAM, necessary to support
+Listen-Before-Talk and spectral scan features, from the sx1261_pram.var file.
 
-Then, from the same console where the previous environment variables have been
-set, do:
+### 2.15. loragw_lbt
 
-`make clean all`
+This module contains functions to start and stop the Listen-Before-Talk feature
+when it is enabled. Those functions are called by the lgw_send() function to
+ensure that the concentrator is allowed to transmit.
 
-## 5. USB
+Listen-Before-Talk (LBT) and Spectral Scan features need an additional sx1261
+radio to be configured.
 
-This project provides support for both SPI or USB gateways. For USB interface,
-the concentrator board has a STM32 MCU with which the linux host will
-communicate to configure the sx1302 and the associated radios. The STM32 acts
-as a USB <-> SPI bridge.
+The Listen-Before-Talk feature works as follows:
 
-The STM32 MCU has to be programmed with the binary provided in the `mcu_bin`
-directory of this project. For more details about how to flash it, please refer
-to the `util_boot/readme.md` instructions.
+* the HAL configures the sx1261 for scanning the channel on which it needs to
+transmit.
+* the SX1261 will scan the channel and set a GPIO to high or low depending if
+the channel is busy or not (according to scanning parameters)
+* the sx1302 AGC firmware will check the status of this GPIO before actually
+starting the transmit, to ensure it is allowed. The AGC fw sets its status
+register to inform if the transmit could be done or not.
+* the HAL waits for the transmit to be initiated and checks if it was allowed or
+not.
+* the HAL stops the scanning, and return the tramsit status to the caller.
 
-Each test utility of the project can be used using the `-u -d /dev/ttyACMx'
-command line option, or with the proper configuration in the packet forwarder
-global_conf.json file.
+### 2.16. loragw_mcu
 
-## 6. Third party libraries
+This module contains the functions to setup the communication interface with the
+STM32 MCU, and to communicate with the sx1302 and the radios when the host and
+the concentrator are connected through USB llink.
 
-This project relies on several third-party open source libraries, that can be
-found in the `libtools` directory.
-* parson: a JSON parser (http://kgabis.github.com/parson/)
-* tinymt32: a pseudo-random generator (only used for debug/test)
+The MCU acts as a simple USB <-> SPI bridge. This means that the HAL running on
+the host is the same, for both SPI or USB gateways.
 
-## 7. Changelog
+But, as the USB communication link brings a 1ms latency for each transfer, the
+MCU provides a mean to group register write requests in one single USB transfer.
+It is necessary when a particular configuration has to be done in a time
+critical task.
 
-### v2.1.0 ###
+For this, 2 new functions has been added:
+* lgw_com_set_write_mode, to indicate if the following calls to lgw_com_w(b)
+need to be grouped on a single USB transfer (BULK mode) or not (SINGLE mode).
+* lgw_com_flush, to actually perform the USB transfer of all grouped commands
+if BULK mode was selected.
 
-> #### Updates
+Both functions will do nothing in case of SPI.
 
-This release only targets USB Corecell (no change for SPI connexion type).
-The USB-SPI bridge firmware, which runs on the STM32 MCU of the USB Corecell, has
-been updated for API clean-up and robustness improvements.
+The same mechanism can be used to configure the sx1261 radio.
 
-> #### Changes
+## 3. Software build process
 
-* MCU: USB-SPI bridge firmware binary v1.0.0.
-	* Removed obsolete commands (ORDER_ID__REQ_SPI, ORDER_ID__ACK_SPI)
-	* Command index shifted after obsolete commands removal (ORDER_ID__REQ_MULTIPLE_SPI, ORDER_ID__ACK_MULTIPLE_SPI)
-	* Command parser sends ORDER_ID__UNKNOW_CMD in case of wrong command size.
-	* Code clean-up (typo fixed, comments added...)
-	* Implemented Error_Handler() function to reset the MCU in case of fatal error.
-	* Fixed a potential roll-over issue in read_write_spi() function.
-	* Increased delay tolerance for host feedback on USB transfers.
-* HAL: Command interface updated for MCU firmware v1.0.0.
-	* Removed obsolete commands from enum order_id_e
-	* Shifted commands enum index according to USB-SPI bridge update.
-	* Removed decode_ack_spi_access() unused function.
-* HAL: Added timing debug information under DEBUG_MCU.
+### 3.1. Details of the software
 
-### v2.0.2 ###
+The library is written following ANSI C conventions but using C99 explicit
+length data type for all data exchanges with hardware and for parameters.
 
-> #### Updates
+The loragw_aux module contains POSIX dependant functions for millisecond
+accuracy pause.
+For embedded platforms, the function could be rewritten using hardware timers.
 
-Fixed AGC firmware version check for sx1255/sx1257 based platforms (full-duplex
-gateways...).
+### 3.2. Building options
 
-> #### Changes
+All modules use a fprintf(stderr,...) function to display debug diagnostic
+messages if the DEBUG_xxx is set to 1 in library.cfg
 
-* HAL: AGC firmware version for sx1255/sx1257 based gateways is v6.
-* HAL: minor cosmetic changes & typo fixing.
+### 3.3. Building procedures
 
-### v2.0.1 ###
+For cross-compilation set the ARCH and CROSS_COMPILE variables in the Makefile,
+or in your shell environment, with the correct toolchain name and path.
+ex:
+export PATH=/home/foo/rpi-toolchain/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/bin:$PATH
+export ARCH=arm
+export CROSS_COMPILE=arm-linux-gnueabihf-
 
-> #### Updates
+The Makefile in the libloragw directory will parse the library.cfg file and
+generate a config.h C header file containing #define options.
+Those options enables and disables sections of code in the loragw_xxx.h files
+and the *.c source files.
 
-The fine timestamping feature has been fully validated with this release.
+The library.cfg is also used directly to select the proper set of dynamic
+libraries to be linked with.
 
-> #### Changes
+### 3.4. Export
 
-* HAL: Adjusted the freq_offset field of received packets, to take into account
-the channel IF resolution error.
-* HAL: Refined the fine timestamp offset compared to Gateway v2, by taking into
-account the frequency offset of the received packet.
-* HAL: Fixed the preamble length for FSK downlinks
-* MCU: Removed the binary compiled in debug mode.
-* util_spectral_scan: actually use the nb_scan input argument which was ignored.
+Once build, to use that library on another system, you need to export the
+following files :
 
-### v2.0.0 ###
+* libloragw/library.cfg  -> root configuration file
+* libloragw/libloragw.a  -> static library, to be linked with a program
+* libloragw/readme.md  -> required for license compliance
+* libloragw/inc/config.h  -> C configuration flags, derived from library.cfg
+* libloragw/inc/loragw_*.h  -> take only the ones you need (eg. _hal and _gps)
 
-> #### New features
+After statically linking the library to your application, only the license
+is required to be kept or copied inside your program documentation.
 
-* Added support for USB interface between the HOST and the concentrator,
-for sx1250 based concentrator only.
-* Added support for Listen-Before-Talk for AS923 region, using the additional
-sx1261 radio from the Semtech Corecell reference design v3.
-* Added support for Spectral Scan with additional sx1261 radio from the Semtech
-Corecell reference design v3.
-* Added support for SX1303 chip, for further Fine Timestamping support.
-* Merged the master-fdd-cn490 branch to bring support for CN490 Full-Duplex
-reference design. It is an integration of the releases v1.1.0, v1.1.1, v1.1.2
-described below.
+## 4. Hardware dependencies
 
-> #### Changes
+### 4.1. Hardware revision
 
-* HAL: Reworked the complete communication layer. A new loragw_com module has
-been introduced to handle switching from a USB or a SPI communication interface,
-aligned function prototypes for sx125x, sx1250 and sx1261 radios. For USB, a
-mode has been added to group SPI write commands request to the STM32 MCU, in
-order to optimize latency during time critical configuration phases.
-* HAL: Added preliminary support for Fine Timestamping for TDOA localization.
-* HAL: Updated AGC firmware to v6: add configurable delay for PA to start, add
-Listen-Before-Talk support.
-* HAL: Added new API function lgw_demod_setconf() to set global demodulator
-settings.
-* HAL: Added new API functions for Spectral Scan.
-* Packet Forwarder: The type of interface is configurable in the
-global_conf.json file: com_type can be "USB" or "SPI".
-* Packet Forwarder: Changed the parameters to configure fine timestamping in the
-global_conf.json.
-* Packet Forwarder: Added sections to configure the spectral scan and
-Listen-Before-Talk features.
-* Packet Forwarder: Added a new thread for background spectral scan example,
-to show how to use the spectral scan API provided by the HAL, without
-interfering with the main tasks of the gateway (aka Receive uplinks and transmit
-downlinks).
-* Packet Forwarder: Added "nhdr" field parsing from "txpk" JSON downlink request
-in order to be able to send beacon request from Network Server.
-* Packet Forwarder: Added chan_multiSF_All in global_conf.json to choose which
-spreading factors to enable for multi-sf demodulators.
-* Packet Forwarder: Updated PROTOCOL.md to v1.6.
-* Tools: added util_spectral_scan, a standalone spectral scanner utility.
+The loragw_reg and loragw_hal are written for a specific version on the Semtech
+hardware (IP and/or silicon revision).
 
-> #### Notes
+This code has been written for:
 
-* This release has been validated on the Semtech Corecell reference design v3
-with USB interface.
+* Semtech SX1302 chip
+* Semtech SX1250, SX1257 or SX1255 I/Q transceivers
 
-### v1.1.2 ###
+The library will not work if there is a mismatch between the hardware version
+and the library version. You can use the test program test_loragw_reg to check
+if the hardware registers match their software declaration.
 
-> Integrated in ***v2.0.0*** from ***master-fdd-cn490*** branch.
+### 4.2. GPS receiver (or other GNSS system)
 
-* packet forwarder: updated global_conf.json.sx1255.CN490.full-duplex with RSSI
-temperature compensation coefficients, and updated RSSI offset for radio 1.
+To use the GPS module of the library, the host must be connected to a GPS
+receiver via a serial link (or an equivalent receiver using a different
+satellite constellation).
+The serial link must appear as a "tty" device in the /dev/ directory, and the
+user launching the program must have the proper system rights to read and
+write on that device.
+Use `chmod a+rw` to allow all users to access that specific tty device, or use
+sudo to run all your programs (eg. `sudo ./test_loragw_gps`).
 
-### v1.1.1 ###
+In the current revision, the library only reads data from the serial port,
+expecting to receive NMEA frames that are generally sent by GPS receivers as
+soon as they are powered up, and UBX messages which are proprietary to u-blox
+modules.
 
-> Integrated in ***v2.0.0*** from ***master-fdd-cn490*** branch.
+The GPS receiver **MUST** send UBX messages shortly after sending a PPS pulse
+on to allow internal concentrator timestamps to be converted to absolute GPS time.
+If the GPS receiver sends a GGA NMEA sentence, the gateway 3D position will
+also be available.
 
-* HAL: Updated SX1302 LNA/PA LUT configuration for Full Duplex CN490 reference
-design.
-* test_loragw_hal_rx/tx: added --fdd option to enable Full Duplex
-* packet forwarder: updated global_conf.json.sx1255.CN490.full-duplex for CN490
-reference design.
+### 4.3. Additionnal SX1261 radio
 
-### v1.1.0 ###
+In order to perform Listen-Before-Talk and/or Spectral Scan, an additional SX1261
+radio is required. Its internal firmware also needs to be patched (patch RAM) to
+support those particular features.
 
-> Integrated in ***v2.0.0*** from ***master-fdd-cn490*** branch.
+## 5. Usage
 
-* HAL: Added support for CN490 full duplex reference design.
+### 5.1. Setting the software environment
 
-### v1.0.5 ###
+For a typical application you need to:
 
-* HAL: Fixed packet timestamp issue which was "jumping in time" in specific
-conditions.
-* HAL: Workaround hardware issue when reading 32-bits registers (timestamp, nb
-bytes in RX buffer...)
-* HAL: Fixed potential endless loop in sx1302_tx_abort() in SPI access fails.
-* Packet Forwarder: Added global_conf.json.sx1250.US915 for US915 band
-* test_hal_rx: added command line to specify RSSI offset to be applied
+* include loragw_hal.h in your program source
+* link to the libloragw.a static library during compilation
+* link to the librt library due to loragw_aux dependencies (timing functions)
 
-### v1.0.4 ###
+For an application that will also access the concentrator configuration
+registers directly (eg. for advanced configuration) you also need to:
 
-* Added missing LICENSE.TXT file
-* HAL & Packet Forwarder: added support for sx1250-based reference design for
-CN490 region
-* Packet Forwarder: disabled beaconing by default
+* include loragw_reg.h in your program source
 
-### v1.0.3 ###
+### 5.2. Using the software API
 
-* HAL: Fixed scheduled downlink time precision by taking the tx start delay into
-account.
-* HAL: Fixed timestamp correction calculation for BW250 & BW500
-* HAL: Fixed possible buffer overflow in lgw_receive() function
-* HAL: Keep packet received in RX buffer when the buffer allocated to receive
-the packets is too small. Remaining packets will be fetched on the next
-lgw_receive calls (aligned on SX1301 behaviour).
+To use the HAL in your application, you must follow some basic rules:
 
-### v1.0.2 ###
+* configure the radios path and IF+modem path before starting the radio
+* the configuration is only transferred to hardware when you call the *start*
+  function
+* you cannot receive packets until one (or +) radio is enabled AND one (or +)
+  IF+modem part is enabled AND the concentrator is started
+* you cannot send packets until one (or +) radio is enabled AND the concentrator
+  is started
+* you must stop the concentrator before changing the configuration
 
-* Fixed compilation warnings reported by latest versions of GCC
-* Reworked handling of temperature sensor
-* Clean-up of unused files
-* Added instructions and configuration files for packet forwarder auto-start
-with systemd
-* Added SX1250 radio calibration at startup
+A typical application flow for using the HAL is the following:
 
-### v1.0.1 ###
+	<configure the radios and IF+modems>
+	<start the LoRa concentrator>
+	loop {
+		<fetch packets that were received by the concentrator>
+		<process, store and/or forward received packets>
+		<send packets through the concentrator>
+	}
+	<stop the concentrator>
 
-* Packet Forwarder: Updated TX gain LUT in global_conf.json.sx1250 with proper
-calibration
+**/!\ Warning** The lgw_send function is non-blocking and returns while the
+LoRa concentrator is still sending the packet, or even before the packet has
+started to be transmitted if the packet is triggered on a future event.
+While a packet is emitted, no packet can be received (limitation intrinsic to
+most radio frequency systems).
 
-### v1.0.0 ###
+Your application *must* take into account the time it takes to send a packet or
+check the status (using lgw_status) before attempting to send another packet.
 
-* HAL: Initial official release for SX1302 CoreCell Reference Design.
+Trying to send a packet while the previous packet has not finished being send
+will result in the previous packet not being sent or being sent only partially
+(resulting in a CRC error in the receiver).
 
-### v0.0.1 ###
+### 5.3. Debugging mode
 
-* HAL: Initial private release for TAP program
+To debug your application, it might help to compile the loragw_hal function
+with the debug messages activated (set DEBUG_HAL=1 in library.cfg).
+It then send a lot of details, including detailed error messages to *stderr*.
 
-## 8. Legal notice
+## 6. Notes
 
-The information presented in this project documentation does not form part of
-any quotation or contract, is believed to be accurate and reliable and may be
-changed without notice. No liability will be accepted by the publisher for any
-consequence of its use. Publication thereof does not convey nor imply any
-license under patent or other industrial or intellectual property rights.
-Semtech assumes no responsibility or liability whatsoever for any failure or
-unexpected operation resulting from misuse, neglect improper installation,
-repair or improper handling or unusual physical or electrical stress
-including, but not limited to, exposure to parameters beyond the specified
-maximum ratings or operation outside the specified range.
+### 6.1. Spreading factor SF5 & SF6
 
-SEMTECH PRODUCTS ARE NOT DESIGNED, INTENDED, AUTHORIZED OR WARRANTED TO BE
-SUITABLE FOR USE IN LIFE-SUPPORT APPLICATIONS, DEVICES OR SYSTEMS OR OTHER
-CRITICAL APPLICATIONS. INCLUSION OF SEMTECH PRODUCTS IN SUCH APPLICATIONS IS
-UNDERSTOOD TO BE UNDERTAKEN SOLELY AT THE CUSTOMER'S OWN RISK. Should a
-customer purchase or use Semtech products for any such unauthorized
-application, the customer shall indemnify and hold Semtech and its officers,
-employees, subsidiaries, affiliates, and distributors harmless against all
-claims, costs damages and attorney fees which could arise.
+The sx1302 supports SF5 and SF6 spreading factors, and the HAL also. But it is
+important to note that the only syncword supported for SF5 and SF6 is 0x12
+(also known as "private").
+
+This is true whatever how of the "lorawan_public" field of lgw_conf_board_s is
+set.
+
+## 7. License
+
+Copyright (c) 2019, SEMTECH S.A.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright
+  notice, this list of conditions and the following disclaimer.
+* Redistributions in binary form must reproduce the above copyright
+  notice, this list of conditions and the following disclaimer in the
+  documentation and/or other materials provided with the distribution.
+* Neither the name of the Semtech corporation nor the
+  names of its contributors may be used to endorse or promote products
+  derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL SEMTECH S.A. BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 *EOF*
