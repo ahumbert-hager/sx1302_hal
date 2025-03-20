@@ -28,6 +28,7 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <inttypes.h>
 #include <signal.h>
 #include <math.h>
 #include <getopt.h>
@@ -35,6 +36,7 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 #include "loragw_hal.h"
 #include "loragw_reg.h"
 #include "loragw_aux.h"
+#include "loragw_sx1261.h"
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE MACROS ------------------------------------------------------- */
@@ -54,27 +56,18 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 int main(void)
 {
     /* SPI interfaces */
-    const char com_path_default[] = "COM7";
-    const char * com_path = com_path_default;
+    const char com_path[] = "COM7";
 
     int i, j, x;
-    uint32_t fa = DEFAULT_FREQ_HZ;
-    uint32_t fb = DEFAULT_FREQ_HZ;
-    double arg_d = 0.0;
-    unsigned int arg_u;
-    uint8_t clocksource = 0;
     uint8_t max_rx_pkt = 16;
-    bool single_input_mode = false;
-    float rssi_offset = 0.0;
 
     struct lgw_conf_board_s boardconf;
     struct lgw_conf_rxrf_s rfconf;
     struct lgw_conf_rxif_s ifconf;
 
+ 
     unsigned long nb_pkt_crc_ok = 0, nb_loop = 0;
     int nb_pkt;
-
-    uint8_t channel_mode = 0; /* LoRaWAN-like */
 
     const int32_t channel_if_mode0[9] = {
         -400000,
@@ -88,29 +81,12 @@ int main(void)
         -200000 /* lora service */
     };
 
-    const int32_t channel_if_mode1[9] = {
-        -400000,
-        -400000,
-        -400000,
-        -400000,
-        -400000,
-        -400000,
-        -400000,
-        -400000,
-        -400000 /* lora service */
-    };
-
     const uint8_t channel_rfchain_mode0[9] = { 1, 1, 1, 0, 0, 0, 0, 0, 1 };
-
-    const uint8_t channel_rfchain_mode1[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-
-
-    printf("===== sx1302 HAL RX test =====\n");
 
     /* Configure the gateway */
     memset( &boardconf, 0, sizeof boardconf);
     boardconf.lorawan_public = true;
-    boardconf.clksrc = clocksource;
+    boardconf.clksrc = 0;
     strncpy(boardconf.com_path, com_path, sizeof boardconf.com_path);
     boardconf.com_path[sizeof boardconf.com_path - 1] = '\0'; /* ensure string termination */
     if (lgw_board_setconf(&boardconf) != LGW_HAL_SUCCESS) {
@@ -121,10 +97,15 @@ int main(void)
     /* set configuration for RF chains */
     memset( &rfconf, 0, sizeof rfconf);
     rfconf.enable = true;
-    rfconf.freq_hz = fa;
-    rfconf.rssi_offset = rssi_offset;
+    rfconf.freq_hz = 867500000;
+    rfconf.rssi_offset = -215.4;
     rfconf.tx_enable = false;
-    rfconf.single_input_mode = single_input_mode;
+    rfconf.single_input_mode = false;
+    rfconf.rssi_tcomp.coeff_a = 0;
+    rfconf.rssi_tcomp.coeff_b = 0;
+    rfconf.rssi_tcomp.coeff_c = 20.41;
+    rfconf.rssi_tcomp.coeff_d = 2162.56;
+    rfconf.rssi_tcomp.coeff_e = 0;
     if (lgw_rxrf_setconf(0, &rfconf) != LGW_HAL_SUCCESS) {
         printf("ERROR: failed to configure rxrf 0\n");
         return -1;
@@ -132,10 +113,15 @@ int main(void)
 
     memset( &rfconf, 0, sizeof rfconf);
     rfconf.enable = true;
-    rfconf.freq_hz = fb;
-    rfconf.rssi_offset = rssi_offset;
+    rfconf.freq_hz = 868500000;
+    rfconf.rssi_offset = -215.4;
     rfconf.tx_enable = false;
-    rfconf.single_input_mode = single_input_mode;
+    rfconf.single_input_mode = false;
+    rfconf.rssi_tcomp.coeff_a = 0;
+    rfconf.rssi_tcomp.coeff_b = 0;
+    rfconf.rssi_tcomp.coeff_c = 20.41;
+    rfconf.rssi_tcomp.coeff_d = 2162.56;
+    rfconf.rssi_tcomp.coeff_e = 0;
     if (lgw_rxrf_setconf(1, &rfconf) != LGW_HAL_SUCCESS) {
         printf("ERROR: failed to configure rxrf 1\n");
         return -1;
@@ -145,16 +131,8 @@ int main(void)
     memset(&ifconf, 0, sizeof(ifconf));
     for (i = 0; i < 8; i++) {
         ifconf.enable = true;
-        if (channel_mode == 0) {
-            ifconf.rf_chain = channel_rfchain_mode0[i];
-            ifconf.freq_hz = channel_if_mode0[i];
-        } else if (channel_mode == 1) {
-            ifconf.rf_chain = channel_rfchain_mode1[i];
-            ifconf.freq_hz = channel_if_mode1[i];
-        } else {
-            printf("ERROR: channel mode not supported\n");
-            return -1;
-        }
+        ifconf.rf_chain = channel_rfchain_mode0[i];
+        ifconf.freq_hz = channel_if_mode0[i];
         ifconf.datarate = DR_LORA_SF7;
         if (lgw_rxif_setconf(i, &ifconf) != LGW_HAL_SUCCESS) {
             printf("ERROR: failed to configure rxif %d\n", i);
@@ -168,15 +146,24 @@ int main(void)
     ifconf.freq_hz = channel_if_mode0[i];
     ifconf.datarate = DR_LORA_SF7;
     ifconf.bandwidth = BW_250KHZ;
+    ifconf.implicit_crc_en = false;
+    ifconf.implicit_coderate = 1;
+    ifconf.implicit_hdr = false;
+    ifconf.implicit_payload_length = 17;
     if (lgw_rxif_setconf(8, &ifconf) != LGW_HAL_SUCCESS) {
         printf("ERROR: failed to configure rxif for LoRa service channel\n");
         return -1;
     }
 
-    /* set the buffer size to hold received packets */
-    struct lgw_pkt_rx_s rxpkt[max_rx_pkt];
-    printf("INFO: rxpkt buffer size is set to %u\n", max_rx_pkt);
-    printf("INFO: Select channel mode %u\n", channel_mode);
+    /* set configuration for FSK channel */
+    memset(&ifconf, 0, sizeof(ifconf));
+    ifconf.rf_chain = 1;
+    ifconf.freq_hz = 300000;
+    ifconf.datarate = 50000;
+    if (lgw_rxif_setconf(9, &ifconf) != LGW_HAL_SUCCESS) {
+        printf("ERROR: invalid configuration for FSK channel\n");
+        return -1;
+    }
 
     /* connect, configure and start the LoRa concentrator */
     x = lgw_start();
@@ -185,9 +172,47 @@ int main(void)
         return -1;
     }
 
+    /* get the concentrator EUI */
+    uint64_t eui;
+    x = lgw_get_eui(&eui);
+    if (x != LGW_HAL_SUCCESS) {
+        printf("ERROR: failed to get concentrator EUI\n");
+    } else {
+        printf("\nINFO: concentrator EUI: 0x%016" PRIx64 "\n\n", eui);
+    }
+
+    /* configure the sx1261 */
+    x = sx1261_calibrate(868100000);
+    if (x != LGW_REG_SUCCESS) {
+        printf("ERROR: Failed to calibrate the sx1261\n");
+    }
+
+    x = sx1261_setup();
+    if (x != LGW_REG_SUCCESS) {
+        printf("ERROR: Failed to setup the sx1261\n");
+    }
+
+    x = sx1261_set_rx_params(868100000, BW_125KHZ);
+    if (x != LGW_REG_SUCCESS) {
+        printf("ERROR: Failed to set RX params\n");
+    }
+
+    
+    uint8_t buff[2];
+    float rssi_inst;
+    /* databuffer R/W stress test */
+    sx1261_reg_r(SX1261_GET_RSSI_INST, buff, 2);
+
+    rssi_inst = -((float)buff[1] / 2);
+
+    printf("\rSX1261 RSSI at %uHz: %f dBm\n", 868100000, rssi_inst);
+
     /* Loop until we have enough packets with CRC OK */
     printf("Waiting for packets...\n");
 
+
+    /* set the buffer size to hold received packets */
+    struct lgw_pkt_rx_s rxpkt[max_rx_pkt];
     nb_pkt_crc_ok = 0;
 
     while ((nb_pkt_crc_ok < 5) && (nb_loop < 500)) {
@@ -225,6 +250,59 @@ int main(void)
     }
 
     printf( "Nb valid packets received: %lu CRC OK\n", nb_pkt_crc_ok );
+
+
+    struct lgw_pkt_tx_s pkt;
+    uint8_t tx_status;
+    uint32_t count_us;
+    
+    /* Send packets */
+     memset(&pkt, 0, sizeof pkt);
+     pkt.rf_chain = 0;
+     pkt.freq_hz = 868500000;
+     pkt.rf_power = 0;
+     pkt.tx_mode = IMMEDIATE; //or
+     pkt.tx_mode = TIMESTAMPED;
+     
+     #ifdef CW
+    pkt.modulation = MOD_CW;
+    pkt.freq_offset = 0;
+    pkt.f_dev = 25;
+    #endif
+     
+    #ifdef FSK
+         pkt.modulation = MOD_FSK;
+         pkt.no_crc = false;
+         pkt.datarate = 50000;
+         pkt.f_dev = 25;
+    #endif
+    pkt.modulation = MOD_LORA;
+    pkt.coderate = CR_LORA_4_5;
+    pkt.no_crc = true;
+    pkt.datarate = 10;
+
+
+     pkt.bandwidth = BW_250KHZ;
+     pkt.size = 10;
+     pkt.invert_pol = false;
+     pkt.preamble = 8;
+     pkt.no_header = false;
+     for (int i = 0; i < 8; i++) {
+         pkt.payload[i] = i;
+     }
+        lgw_get_instcnt(&count_us);
+     pkt.count_us = count_us + 1000000;
+  
+     x = lgw_send(&pkt);
+     if (x != 0) {
+         printf("ERROR: failed to send packet\n");
+     }
+     /* wait for packet to finish sending */
+     do {
+         wait_ms(5);
+         lgw_status(pkt.rf_chain, TX_STATUS, &tx_status); /* get TX status */
+     } while (tx_status != TX_FREE);
+    printf("TX done\n");
 
      /* Stop the gateway */
     x = lgw_stop();

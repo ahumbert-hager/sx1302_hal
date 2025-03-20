@@ -72,7 +72,6 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 #define CONTEXT_DEMOD           lgw_context.demod_cfg
 #define CONTEXT_LORA_SERVICE    lgw_context.lora_service_cfg
 #define CONTEXT_FSK             lgw_context.fsk_cfg
-#define CONTEXT_FINE_TIMESTAMP  lgw_context.ftime_cfg
 #define CONTEXT_SX1261          lgw_context.sx1261_cfg
 
 /* -------------------------------------------------------------------------- */
@@ -137,10 +136,6 @@ static lgw_context_t lgw_context = {
         .datarate = 50000,
         .sync_word_size = 3,
         .sync_word = 0xC194C1
-    },
-    .ftime_cfg = {
-        .enable = false,
-        .mode = LGW_FTIME_MODE_ALL_SF
     },
     .sx1261_cfg = {
         .enable = false,
@@ -520,7 +515,7 @@ int lgw_start(void) {
     }
 
     /* Basic initialization of the sx1302 */
-    err = sx1302_init(&CONTEXT_FINE_TIMESTAMP);
+    err = sx1302_init();
     if (err != LGW_REG_SUCCESS) {
         printf("ERROR: failed to initialize SX1302\n");
         return LGW_HAL_ERROR;
@@ -618,7 +613,7 @@ int lgw_start(void) {
         printf("ERROR: failed to load ARB firmware\n");
         return LGW_HAL_ERROR;
     }
-    err = sx1302_arb_start(FW_VERSION_ARB, &CONTEXT_FINE_TIMESTAMP);
+    err = sx1302_arb_start(FW_VERSION_ARB);
     if (err != LGW_REG_SUCCESS) {
         printf("ERROR: failed to start ARB firmware\n");
         return LGW_HAL_ERROR;

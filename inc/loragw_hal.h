@@ -270,15 +270,6 @@ typedef enum {
 } lgw_ftime_mode_t;
 
 /**
-@struct lgw_conf_ftime_s
-@brief Configuration structure for fine timestamping
-*/
-struct lgw_conf_ftime_s {
-    bool enable;              /*!> Enable / Disable fine timestamping */
-    lgw_ftime_mode_t mode;    /*!> Fine timestamping mode */
-};
-
-/**
 @enum lgw_lbt_scan_time_t
 @brief Radio types that can be found on the LoRa Gateway
 */
@@ -334,7 +325,6 @@ typedef struct lgw_context_s {
     struct lgw_conf_rxif_s      lora_service_cfg;                       /* LoRa service channel config parameters */
     struct lgw_conf_rxif_s      fsk_cfg;                                /* FSK channel config parameters */
     /* Misc */
-    struct lgw_conf_ftime_s     ftime_cfg;
     struct lgw_conf_sx1261_s    sx1261_cfg;
 } lgw_context_t;
 
@@ -382,20 +372,6 @@ int lgw_rxif_setconf(uint8_t if_chain, struct lgw_conf_rxif_s * conf);
 @return LGW_HAL_ERROR id the operation failed, LGW_HAL_SUCCESS else
 */
 int lgw_demod_setconf(struct lgw_conf_demod_s * conf);
-
-/**
-@brief Configure the fine timestamping
-@param conf pointer to structure defining the config to be applied
-@return LGW_HAL_ERROR id the operation failed, LGW_HAL_SUCCESS else
-*/
-int lgw_ftime_setconf(struct lgw_conf_ftime_s * conf);
-
-/*
-@brief Configure the SX1261 radio for LBT/Spectral Scan
-@param pointer to structure defining the config to be applied
-@return LGW_HAL_ERROR id the operation failed, LGW_HAL_SUCCESS else
-*/
-int lgw_sx1261_setconf(struct lgw_conf_sx1261_s * conf);
 
 /**
 @brief Connect to the LoRa concentrator, reset it and configure it according to previously set parameters

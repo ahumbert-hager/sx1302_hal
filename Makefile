@@ -22,10 +22,7 @@ LIBS := -lloragw -lrt -lm
 
 all: 	libloragw.a \
 		libloragw.dll \
-		test_loragw_hal_tx \
-		test_loragw_hal_rx \
-		test_loragw_sx1261_rssi \
-		chip_id
+		test_loragw_hal
 clean:
 	rm -f libloragw.a
 	rm -f test_loragw_*
@@ -74,16 +71,7 @@ libloragw.dll: $(OBJDIR)/loragw_com.o \
 
 ### test programs
 
-test_loragw_hal_tx: tst/test_loragw_hal_tx.c libloragw.a
+test_loragw_hal: tst/test_loragw_hal.c libloragw.a
 	$(CC) $(CFLAGS) -L. -L../libtools $< -o $@ $(LIBS)
-
-test_loragw_hal_rx: tst/test_loragw_hal_rx.c libloragw.a
-	$(CC) $(CFLAGS) -L. -L../libtools $< -o $@ $(LIBS)
-
-test_loragw_sx1261_rssi: tst/test_loragw_sx1261_rssi.c libloragw.a
-	$(CC) $(CFLAGS) -L. -L../libtools  $< -o $@ $(LIBS)
-
-chip_id: tst/chip_id.c libloragw.a
-	$(CC) $(CFLAGS) -L. -L../libtools  $< -o $@ $(LIBS)
 
 ### EOF

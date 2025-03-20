@@ -404,23 +404,8 @@ uint32_t timestamp_pkt_expand(timestamp_counter_t * self, uint32_t pkt_cnt_us) {
 
 int timestamp_counter_mode(bool ftime_enable) {
     int x = LGW_REG_SUCCESS;
-
-    if (ftime_enable == false) {
-        printf("INFO: using legacy timestamp\n");
-        /* Latch end-of-packet timestamp (sx1301 compatibility) */
-        x |= lgw_reg_w(SX1302_REG_RX_TOP_RX_BUFFER_LEGACY_TIMESTAMP, 0x01);
-    } else {
-        printf("INFO: using precision timestamp (max_ts_metrics:%u nb_symbols:%u)\n", PRECISION_TIMESTAMP_TS_METRICS_MAX, PRECISION_TIMESTAMP_NB_SYMBOLS);
-
-        /* Latch end-of-preamble timestamp */
-        x |= lgw_reg_w(SX1302_REG_RX_TOP_RX_BUFFER_LEGACY_TIMESTAMP, 0x00);
-        x |= lgw_reg_w(SX1302_REG_RX_TOP_RX_BUFFER_TIMESTAMP_CFG_MAX_TS_METRICS, (int32_t)PRECISION_TIMESTAMP_TS_METRICS_MAX);
-
-        /* LoRa multi-SF modems */
-        x |= lgw_reg_w(SX1302_REG_RX_TOP_TIMESTAMP_ENABLE, 0x01);
-        x |= lgw_reg_w(SX1302_REG_RX_TOP_TIMESTAMP_NB_SYMB, (int32_t)PRECISION_TIMESTAMP_NB_SYMBOLS);
-    }
-
+    /* Latch end-of-packet timestamp (sx1301 compatibility) */
+    x |= lgw_reg_w(SX1302_REG_RX_TOP_RX_BUFFER_LEGACY_TIMESTAMP, 0x01);
     return x;
 }
 
@@ -443,11 +428,7 @@ int32_t timestamp_counter_correction(lgw_context_t * context, uint8_t bandwidth,
     }
 
     /* Calculate the correction to be applied */
-    if (context->ftime_cfg.enable == false) {
-        return legacy_timestamp_correction(bandwidth, datarate, coderate, crc_en, payload_length, dft_peak_mode);
-    } else {
-        return precision_timestamp_correction(bandwidth, datarate, coderate, crc_en, payload_length);
-    }
+    return legacy_timestamp_correction(bandwidth, datarate, coderate, crc_en, payload_length, dft_peak_mode);
 }
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
