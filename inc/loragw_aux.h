@@ -101,33 +101,6 @@ uint32_t lora_packet_time_on_air( const uint8_t bw,
                                   uint32_t * nb_symbols_payload,
                                   uint16_t * t_symbol_us);
 
-/**
-@brief Record the current time, for measure start
-@param tm Pointer to the current time value
-*/
-void _meas_time_start(struct timeval *tm);
-
-/**
-@brief Measure the ellapsed time since given time
-@param debug_level  debug print debug level to be used
-@param start_time   start time of the measure to be used
-@param str          string to be used for debug print
-*/
-void _meas_time_stop(int debug_level, struct timeval start_time, const char *str);
-
-/**
-@brief Get the current time for later timeout check
-@param start contains the current time to be used as start time for timeout
-*/
-void timeout_start(struct timeval * start);
-
-/**
-@brief Check if the given timeout time in milliseconds has ellapsed compared to start time
-@param start reference start time
-@param timeout_ms the timeout duration in milliseconds
-@return -1 if the timeout has exceeded, 0 otherwise
-*/
-int timeout_check(struct timeval start, uint32_t timeout_ms);
 
 #endif
 

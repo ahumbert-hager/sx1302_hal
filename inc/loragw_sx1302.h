@@ -157,10 +157,9 @@ int sx1302_radio_calibrate(struct lgw_conf_rxrf_s * context_rf_chain, uint8_t cl
 
 /**
 @brief Configure the PA and LNA LUTs
-@param context_board A pointer to the current board configuration context
 @return LGW_REG_SUCCESS if success, LGW_REG_ERROR otherwise
 */
-int sx1302_pa_lna_lut_configure(struct lgw_conf_board_s * context_board);
+int sx1302_pa_lna_lut_configure(void);
 
 /**
 @brief Configure the Radio Front-End stage of the SX1302

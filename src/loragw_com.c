@@ -17,19 +17,17 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 
 /* -------------------------------------------------------------------------- */
 /* --- DEPENDANCIES --------------------------------------------------------- */
-
 #include <stdint.h>     /* C99 types */
+#include <stdbool.h>    /* bool type */
 #include <stdio.h>      /* printf fprintf */
+#include <string.h>     /* strncmp */
+#include <stdlib.h>     /* srand */
+
 
 #include "loragw_com.h"
 #include "loragw_aux.h"
 #include "loragw_mcu.h"
 #include "serial_port.h"
-
-#include <stdint.h>     /* C99 types */
-#include <stdbool.h>    /* bool type */
-#include <stdio.h>      /* printf fprintf */
-#include <string.h>     /* strncmp */
 
 
 
@@ -177,6 +175,7 @@ int lgw_com_rmw(uint8_t spi_mux_target, uint16_t address, uint8_t offs, uint8_t 
     uint8_t command_size = 6;
     uint8_t in_out_buf[command_size];
     int a = 0;
+    (void)spi_mux_target;
 
 
     DEBUG_PRINTF("==> RMW register @ 0x%04X, offs:%u leng:%u value:0x%02X\n", address, offs, leng, data);

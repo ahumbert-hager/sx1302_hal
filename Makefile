@@ -16,7 +16,7 @@ INCLUDES = $(wildcard inc/*.h) $(wildcard ../libtools/inc/*.h)
 
 ### linking options
 
-LIBS := -lloragw -lrt -lm
+LIBS := -lloragw -lm
 
 ### general build targets
 

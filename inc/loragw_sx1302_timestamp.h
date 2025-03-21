@@ -129,7 +129,7 @@ int32_t timestamp_counter_correction(lgw_context_t * context, uint8_t bandwidth,
 @param nb_symbols           The sampling rate of timestamp metrics
 @return LGW_REG_SUCCESS if success, LGW_REG_ERROR otherwise
 */
-int timestamp_counter_mode(bool ftime_enable);
+int timestamp_counter_mode(void);
 
 /**
 @brief Compute a precise timestamp (fine timestamp) based on given coarse timestamp, metrics given by sx1302 and current GW xtal drift

@@ -18,6 +18,7 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 
 #include <stdint.h>     /* C99 types */
 #include <stdio.h>      /* printf fprintf */
+#include <string.h>
 
 #include "loragw_com.h"
 #include "sx1261_com.h"

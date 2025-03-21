@@ -59,11 +59,11 @@ SOFTWARE.
 
 typedef HANDLE PORT;
 
-PORT OpenPort(int idx)
+PORT OpenPort(const char * com_path)
 {
 	HANDLE hComm;
 	TCHAR comname[100];
-	wsprintf(comname, TEXT("\\\\.\\COM%d"), idx);
+	wsprintf(comname, TEXT("\\\\.\\%s"), com_path);
 	hComm = CreateFile(comname,            //port name 
 		GENERIC_READ | GENERIC_WRITE, //Read/Write   				 
 		0,            // No Sharing                               
@@ -184,7 +184,7 @@ int GetPortParity(PORT com_port) {
 	return dcbSerialParams.Parity;
 }
 
-int SendData(PORT com_port, const char * data, DWORD aSize)
+int SendData(PORT com_port, const unsigned char * data, DWORD aSize)
 {
 	DWORD  dNoOFBytestoWrite = aSize;
 	DWORD  dNoOfBytesWritten;
@@ -198,17 +198,10 @@ int SendData(PORT com_port, const char * data, DWORD aSize)
 	return dNoOfBytesWritten;
 }
 
-DWORD ReceiveData(PORT com_port, char * data, int len)
+DWORD ReceiveData(PORT com_port, unsigned char * data, int len)
 {
-	DWORD dwEventMask;
 	DWORD NoBytesRead;
 	BOOL Status;
-	/*
-	Status = WaitCommEvent(com_port, &dwEventMask, NULL);
-	if (Status == FALSE) {
-		return FALSE;
-	}
-	*/
 	Status = ReadFile(com_port, data, len, &NoBytesRead, NULL);
 	if (Status == FALSE) {
 		NoBytesRead = -1;
@@ -222,7 +215,7 @@ PORT hComm = 0;
 
 int serial_open(const char * com_path)
 {
-	hComm = OpenPort(7);
+	hComm = OpenPort(com_path);
 	SetPortBaudRate(hComm, 115200);
 	SetPortDataBits(hComm, 8);
 	SetPortParity(hComm, 0);
@@ -253,7 +246,7 @@ int serial_read(uint8_t* data, size_t size)
 	return n;
 }
 
-int serial_write(uint8_t* data, uint16_t size)
+int serial_write(const uint8_t* data, uint16_t size)
 {
 	int n = -1;
 	if (serial_isopen() != -1)

@@ -30,6 +30,7 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 #include "loragw_aux.h"
 #include "loragw_hal.h"
 
+#include <windows.h>
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE MACROS ------------------------------------------------------- */
 
@@ -44,33 +45,10 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 /* -------------------------------------------------------------------------- */
 /* --- PUBLIC FUNCTIONS DEFINITION ------------------------------------------ */
 
-void wait_us(unsigned long delay_us) {
-    struct timespec dly;
-    struct timespec rem;
-
-    dly.tv_sec = delay_us / 1000000;
-    dly.tv_nsec = (delay_us % 1000000) * 1000;
-
-    DEBUG_PRINTF("NOTE dly: %ld sec %ld ns\n", dly.tv_sec, dly.tv_nsec);
-
-    while ((dly.tv_sec > 0) || (dly.tv_nsec > 1000)) {
-        /*
-        rem is set ONLY if clock_nanosleep is interrupted (eg. by a signal).
-        Must be zeroed each time or will get into an infinite loop after an IT.
-        */
-        rem.tv_sec = 0;
-        rem.tv_nsec = 0;
-        clock_nanosleep(CLOCK_MONOTONIC, 0, &dly, &rem);
-        DEBUG_PRINTF("NOTE remain: %ld sec %ld ns\n", rem.tv_sec, rem.tv_nsec);
-        dly = rem;
-    }
-
-    return;
-}
-
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
+#define WINDOWS
 void wait_ms(unsigned long delay_ms) {
+#ifndef WINDOWS
     struct timespec dly;
     struct timespec rem;
 
@@ -83,7 +61,9 @@ void wait_ms(unsigned long delay_ms) {
         clock_nanosleep(CLOCK_MONOTONIC, 0, &dly, &rem);
         DEBUG_PRINTF("NOTE remain: %ld sec %ld ns\n", rem.tv_sec, rem.tv_nsec);
     }
-    return;
+#else
+    Sleep(delay_ms + 1);
+#endif
 }
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
@@ -160,46 +140,6 @@ uint32_t lora_packet_time_on_air(const uint8_t bw, const uint8_t sf, const uint8
     }
 
     return toa_us;
-}
-
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-void _meas_time_start(struct timeval *tm)
-{
-
-}
-
-void _meas_time_stop(int debug_level, struct timeval start_time, const char *str)
-{
-
-}
-#pragma GCC diagnostic pop
-
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
-void timeout_start(struct timeval * start) {
-    gettimeofday(start, NULL);
-}
-
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-
-int timeout_check(struct timeval start, uint32_t timeout_ms) {
-    struct timeval tm;
-    struct timeval diff;
-    uint32_t ms;
-
-    gettimeofday(&tm, NULL);
-
-    TIMER_SUB(&tm, &start, &diff);
-
-    ms = diff.tv_sec * 1000 + diff.tv_usec / 1000;
-    if (ms >= timeout_ms) {
-        return -1;
-    } else {
-        return 0;
-    }
 }
 
 /* --- EOF ------------------------------------------------------------------ */

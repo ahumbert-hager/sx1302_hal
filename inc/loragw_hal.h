@@ -475,33 +475,10 @@ const char* lgw_version_info(void);
 uint32_t lgw_time_on_air(const struct lgw_pkt_tx_s * packet);
 
 /**
-@brief Start scaning the channel centered on the given frequency
-@param freq_hz channel center frequency
-@param nb_scan number of measures to be done for the scan
-@return LGW_HAL_ERROR id the operation failed, LGW_HAL_SUCCESS else
-*/
-int lgw_spectral_scan_start(uint32_t freq_hz, uint16_t nb_scan);
-
-/**
-@brief Get the current scan status
-@param status a pointer to the returned status
-@return LGW_HAL_ERROR id the operation failed, LGW_HAL_SUCCESS else
-*/
-int lgw_spectral_scan_get_status(lgw_spectral_scan_status_t * status);
-
-/**
-@brief Get the channel scan results
-@param levels an array containing the power levels for which the scan results are given
-@param values ar array containing the results of the scan for each power levels
-@return LGW_HAL_ERROR id the operation failed, LGW_HAL_SUCCESS else
-*/
-int lgw_spectral_scan_get_results(int16_t levels_dbm[static LGW_SPECTRAL_SCAN_RESULT_SIZE], uint16_t results[static LGW_SPECTRAL_SCAN_RESULT_SIZE]);
-
-/**
-@brief Abort the current scan
-@return LGW_HAL_ERROR id the operation failed, LGW_HAL_SUCCESS else
-*/
-int lgw_spectral_scan_abort();
+@brief Configure the gateway
+@param port com
+ */
+int loragw_default_config(const char * com_path);
 
 #endif
 

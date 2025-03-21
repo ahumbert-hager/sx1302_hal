@@ -26,7 +26,7 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 #include "loragw_hal.h"
 #include "sx1261_defs.h"
 
-#include "config.h"     /* library configuration options (dynamically generated) */
+#include "config.h"     /* library configuration options */
 
 /* -------------------------------------------------------------------------- */
 /* --- PUBLIC MACROS -------------------------------------------------------- */
@@ -42,8 +42,6 @@ static const char sx1261_pram_version_string[] = "2D06";
 /* -------------------------------------------------------------------------- */
 /* --- PUBLIC FUNCTIONS PROTOTYPES ------------------------------------------ */
 
-int sx1261_disconnect(void);
-
 int sx1261_reg_w(sx1261_op_code_t op_code, uint8_t *data, uint16_t size);
 int sx1261_reg_r(sx1261_op_code_t op_code, uint8_t *data, uint16_t size);
 
@@ -51,14 +49,6 @@ int sx1261_load_pram(void);
 int sx1261_calibrate(uint32_t freq_hz);
 int sx1261_setup(void);
 int sx1261_set_rx_params(uint32_t freq_hz, uint8_t bandwidth);
-
-int sx1261_lbt_start(lgw_lbt_scan_time_t scan_time_us, int8_t threshold_dbm);
-int sx1261_lbt_stop(void);
-
-int sx1261_spectral_scan_start(uint16_t nb_scan);
-int sx1261_spectral_scan_status(lgw_spectral_scan_status_t * status);
-int sx1261_spectral_scan_get_results(int8_t rssi_offset, int16_t * levels_dbm, uint16_t * results);
-int sx1261_spectral_scan_abort(void);
 
 #endif
 

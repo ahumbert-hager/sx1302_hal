@@ -144,16 +144,6 @@ static lgw_context_t lgw_context = {
     }
 };
 
-/* File handle to write debug logs */
-FILE * log_file = NULL;
-
-/* I2C temperature sensor handles */
-static int     ts_fd = -1;
-static uint8_t ts_addr = 0xFF;
-
-/* I2C AD5338 handles */
-static int     ad_fd = -1;
-
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE FUNCTIONS DECLARATION ---------------------------------------- */
 
@@ -522,7 +512,7 @@ int lgw_start(void) {
     }
 
     /* Configure PA/LNA LUTs */
-    err = sx1302_pa_lna_lut_configure(&CONTEXT_BOARD);
+    err = sx1302_pa_lna_lut_configure();
     if (err != LGW_REG_SUCCESS) {
         printf("ERROR: failed to configure SX1302 PA/LNA LUT\n");
         return LGW_HAL_ERROR;
@@ -687,12 +677,6 @@ int lgw_stop(void) {
         }
     }
 
-    /* Close log file */
-    if (log_file != NULL) {
-        fclose(log_file);
-        log_file = NULL;
-    }
-
     DEBUG_MSG("INFO: Disconnecting\n");
     x = lgw_disconnect();
     if (x != LGW_HAL_SUCCESS) {
@@ -775,14 +759,6 @@ int lgw_receive(uint8_t max_pkt, struct lgw_pkt_rx_s *pkt_data) {
 
 int lgw_send(struct lgw_pkt_tx_s * pkt_data) {
     int err;
-    bool lbt_tx_allowed;
-    /* performances variables */
-    struct timeval tm;
-
-    DEBUG_PRINTF(" --- %s\n", "IN");
-
-    /* Record function start time */
-    _meas_time_start(&tm);
 
     /* check if the concentrator is running */
     if (CONTEXT_STARTED == false) {
@@ -855,17 +831,12 @@ int lgw_send(struct lgw_pkt_tx_s * pkt_data) {
         return LGW_HAL_ERROR;
     }
 
-    _meas_time_stop(1, tm, __FUNCTION__);
-
-    DEBUG_PRINTF(" --- %s\n", "OUT");
-
     return LGW_HAL_SUCCESS;
 }
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 int lgw_status(uint8_t rf_chain, uint8_t select, uint8_t *code) {
-    DEBUG_PRINTF(" --- %s\n", "IN");
 
     /* check input variables */
     CHECK_NULL(code);
@@ -891,10 +862,6 @@ int lgw_status(uint8_t rf_chain, uint8_t select, uint8_t *code) {
         DEBUG_MSG("ERROR: SELECTION INVALID, NO STATUS TO RETURN\n");
         return LGW_HAL_ERROR;
     }
-
-    DEBUG_PRINTF(" --- %s\n", "OUT");
-
-    //DEBUG_PRINTF("INFO: STATUS %u\n", *code);
     return LGW_HAL_SUCCESS;
 }
 
@@ -902,9 +869,6 @@ int lgw_status(uint8_t rf_chain, uint8_t select, uint8_t *code) {
 
 int lgw_abort_tx(uint8_t rf_chain) {
     int err;
-
-    DEBUG_PRINTF(" --- %s\n", "IN");
-
     /* check input variables */
     if (rf_chain >= LGW_RF_CHAIN_NB) {
         DEBUG_MSG("ERROR: NOT A VALID RF_CHAIN NUMBER\n");
@@ -913,22 +877,15 @@ int lgw_abort_tx(uint8_t rf_chain) {
 
     /* Abort current TX */
     err = sx1302_tx_abort(rf_chain);
-
-    DEBUG_PRINTF(" --- %s\n", "OUT");
-
     return err;
 }
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 int lgw_get_trigcnt(uint32_t* trig_cnt_us) {
-    DEBUG_PRINTF(" --- %s\n", "IN");
-
     CHECK_NULL(trig_cnt_us);
 
     *trig_cnt_us = sx1302_timestamp_counter(true);
-
-    DEBUG_PRINTF(" --- %s\n", "OUT");
 
     return LGW_HAL_SUCCESS;
 }
@@ -936,13 +893,9 @@ int lgw_get_trigcnt(uint32_t* trig_cnt_us) {
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 int lgw_get_instcnt(uint32_t* inst_cnt_us) {
-    DEBUG_PRINTF(" --- %s\n", "IN");
-
     CHECK_NULL(inst_cnt_us);
 
     *inst_cnt_us = sx1302_timestamp_counter(false);
-
-    DEBUG_PRINTF(" --- %s\n", "OUT");
 
     return LGW_HAL_SUCCESS;
 }
@@ -950,28 +903,18 @@ int lgw_get_instcnt(uint32_t* inst_cnt_us) {
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 int lgw_get_eui(uint64_t* eui) {
-    DEBUG_PRINTF(" --- %s\n", "IN");
-
     CHECK_NULL(eui);
 
     if (sx1302_get_eui(eui) != LGW_REG_SUCCESS) {
         return LGW_HAL_ERROR;
     }
-
-    DEBUG_PRINTF(" --- %s\n", "OUT");
-
     return LGW_HAL_SUCCESS;
 }
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 int lgw_get_temperature(float* temperature) {
-    int err = LGW_HAL_ERROR;
-
-    DEBUG_PRINTF(" --- %s\n", "IN");
     CHECK_NULL(temperature);
-    DEBUG_PRINTF(" --- %s\n", "OUT");
-
     return lgw_com_get_temperature(temperature);
 }
 
@@ -1018,6 +961,110 @@ uint32_t lgw_time_on_air(const struct lgw_pkt_tx_s *packet) {
     DEBUG_PRINTF(" --- %s\n", "OUT");
 
     return toa_ms;
+}
+
+int loragw_default_config(const char * com_path)
+{
+    struct lgw_conf_board_s boardconf;
+    struct lgw_conf_rxrf_s rfconf;
+    struct lgw_conf_rxif_s ifconf;
+
+    const int32_t channel_if_mode0[9] = {
+        -400000,
+        -200000,
+        0,
+        -400000,
+        -200000,
+        0,
+        200000,
+        400000,
+        -200000 /* lora service */
+    };
+
+    const uint8_t channel_rfchain_mode0[9] = { 1, 1, 1, 0, 0, 0, 0, 0, 1 };
+
+    /* Configure the gateway */
+    memset( &boardconf, 0, sizeof boardconf);
+    boardconf.lorawan_public = true;
+    boardconf.clksrc = 0;
+    strncpy(boardconf.com_path, com_path, sizeof boardconf.com_path);
+    boardconf.com_path[sizeof boardconf.com_path - 1] = '\0'; /* ensure string termination */
+    if (lgw_board_setconf(&boardconf) != LGW_HAL_SUCCESS) {
+        printf("ERROR: failed to configure board\n");
+        return -1;
+    }
+
+    /* set configuration for RF chains */
+    memset( &rfconf, 0, sizeof rfconf);
+    rfconf.enable = true;
+    rfconf.freq_hz = 867500000;
+    rfconf.rssi_offset = -215.4;
+    rfconf.tx_enable = true;
+    rfconf.single_input_mode = false;
+    rfconf.rssi_tcomp.coeff_a = 0;
+    rfconf.rssi_tcomp.coeff_b = 0;
+    rfconf.rssi_tcomp.coeff_c = 20.41;
+    rfconf.rssi_tcomp.coeff_d = 2162.56;
+    rfconf.rssi_tcomp.coeff_e = 0;
+    if (lgw_rxrf_setconf(0, &rfconf) != LGW_HAL_SUCCESS) {
+        printf("ERROR: failed to configure rxrf 0\n");
+        return -1;
+    }
+
+    memset( &rfconf, 0, sizeof rfconf);
+    rfconf.enable = true;
+    rfconf.freq_hz = 868500000;
+    rfconf.rssi_offset = -215.4;
+    rfconf.tx_enable = false;
+    rfconf.single_input_mode = false;
+    rfconf.rssi_tcomp.coeff_a = 0;
+    rfconf.rssi_tcomp.coeff_b = 0;
+    rfconf.rssi_tcomp.coeff_c = 20.41;
+    rfconf.rssi_tcomp.coeff_d = 2162.56;
+    rfconf.rssi_tcomp.coeff_e = 0;
+    if (lgw_rxrf_setconf(1, &rfconf) != LGW_HAL_SUCCESS) {
+        printf("ERROR: failed to configure rxrf 1\n");
+        return -1;
+    }
+
+    /* set configuration for LoRa multi-SF channels (bandwidth cannot be set) */
+    memset(&ifconf, 0, sizeof(ifconf));
+    for (int i = 0; i < 8; i++) {
+        ifconf.enable = true;
+        ifconf.rf_chain = channel_rfchain_mode0[i];
+        ifconf.freq_hz = channel_if_mode0[i];
+        ifconf.datarate = DR_LORA_SF7;
+        if (lgw_rxif_setconf(i, &ifconf) != LGW_HAL_SUCCESS) {
+            printf("ERROR: failed to configure rxif %d\n", i);
+            return -1;
+        }
+    }
+
+    /* set configuration for LoRa Service channel */
+    memset(&ifconf, 0, sizeof(ifconf));
+    ifconf.rf_chain = channel_rfchain_mode0[8];
+    ifconf.freq_hz = channel_if_mode0[8];
+    ifconf.datarate = DR_LORA_SF7;
+    ifconf.bandwidth = BW_250KHZ;
+    ifconf.implicit_crc_en = false;
+    ifconf.implicit_coderate = 1;
+    ifconf.implicit_hdr = false;
+    ifconf.implicit_payload_length = 17;
+    if (lgw_rxif_setconf(8, &ifconf) != LGW_HAL_SUCCESS) {
+        printf("ERROR: failed to configure rxif for LoRa service channel\n");
+        return -1;
+    }
+
+    /* set configuration for FSK channel */
+    memset(&ifconf, 0, sizeof(ifconf));
+    ifconf.rf_chain = 1;
+    ifconf.freq_hz = 300000;
+    ifconf.datarate = 50000;
+    if (lgw_rxif_setconf(9, &ifconf) != LGW_HAL_SUCCESS) {
+        printf("ERROR: invalid configuration for FSK channel\n");
+        return -1;
+    }
+    return 0;
 }
 
 /* --- EOF ------------------------------------------------------------------ */

@@ -191,15 +191,6 @@ const char * spi_status_get_str(const uint8_t status) {
 int write_req(order_id_t cmd, const uint8_t * payload, uint16_t payload_size ) {
     uint8_t buf_w[HEADER_CMD_SIZE];
     int n;
-    /* performances variables */
-    struct timeval tm;
-    /* debug variables */
-#if DEBUG_MCU == 1
-    struct timeval write_tv;
-#endif
-
-    /* Record function start time */
-    _meas_time_start(&tm);
 
     /* Check input params */
     if (payload_size > MAX_SIZE_COMMAND) {
@@ -231,10 +222,7 @@ int write_req(order_id_t cmd, const uint8_t * payload, uint16_t payload_size ) {
         }
     }
 
-#if DEBUG_MCU == 1
-    gettimeofday(&write_tv, NULL);
-#endif
-    DEBUG_PRINTF("\nINFO: %ld.%ld: write_req 0x%02X (%s) done, id:0x%02X, size:%u\n", write_tv.tv_sec, write_tv.tv_usec, cmd, cmd_get_str(cmd), buf_w[0], payload_size);
+    DEBUG_PRINTF("\nINFO: write_req 0x%02X (%s) done, id:0x%02X, size:%u\n", cmd, cmd_get_str(cmd), buf_w[0], payload_size);
 
 #if DEBUG_VERBOSE
     int i;
@@ -246,10 +234,6 @@ int write_req(order_id_t cmd, const uint8_t * payload, uint16_t payload_size ) {
     }
     printf("\n");
 #endif
-
-    /* Compute time spent in this function */
-    _meas_time_stop(5, tm, __FUNCTION__);
-
     return 0;
 }
 
@@ -262,15 +246,6 @@ int read_ack(uint8_t * hdr, uint8_t * buf, size_t buf_size) {
     int n;
     size_t size;
     int nb_read = 0;
-    /* performances variables */
-    struct timeval tm;
-    /* debug variables */
-#if DEBUG_MCU == 1
-    struct timeval read_tv;
-#endif
-
-    /* Record function start time */
-    _meas_time_start(&tm);
 
     /* Read message header first, handle EINTR as it is a blocking call */
     n = serial_read(&hdr[0], (size_t)HEADER_CMD_SIZE);
@@ -278,15 +253,7 @@ int read_ack(uint8_t * hdr, uint8_t * buf, size_t buf_size) {
     if (n == -1) {
         perror("ERROR: Unable to read the port com - ");
         return -1;
-    } else {
-#if DEBUG_MCU == 1
-        gettimeofday(&read_tv, NULL);
-#endif
-        DEBUG_PRINTF("INFO: %ld.%ld: read %d bytes for header from gateway\n", read_tv.tv_sec, read_tv.tv_usec, n);
     }
-
-    /* Compute time spent in this function */
-    _meas_time_stop(5, tm, "read_ack(hdr)");
 
 #if DEBUG_VERBOSE
     printf("read_ack(hdr):");
@@ -297,8 +264,6 @@ int read_ack(uint8_t * hdr, uint8_t * buf, size_t buf_size) {
     printf("\n");
 #endif
 
-    /* Record function start time */
-    _meas_time_start(&tm);
 
     /* Check if the command id is valid */
     if ((cmd_get_type(hdr) < 0x40) || (cmd_get_type(hdr) > 0x46)) {
@@ -323,10 +288,6 @@ int read_ack(uint8_t * hdr, uint8_t * buf, size_t buf_size) {
                 perror("ERROR: Unable to read");
                 return -1;
             } else {
-#if DEBUG_MCU == 1
-                gettimeofday(&read_tv, NULL);
-#endif
-                DEBUG_PRINTF("INFO: %ld.%ld: read %d bytes from gateway\n", read_tv.tv_sec, read_tv.tv_usec, n);
                 nb_read += n;
             }
         } while (nb_read < (int)size); /* we want to read only the expected payload, not more */
@@ -340,9 +301,6 @@ int read_ack(uint8_t * hdr, uint8_t * buf, size_t buf_size) {
         printf("\n");
 #endif
     }
-
-    /* Compute time spent in this function */
-    _meas_time_stop(5, tm, "read_ack(payload)");
 
     return nb_read;
 }

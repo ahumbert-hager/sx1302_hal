@@ -149,9 +149,6 @@ void lora_crc16(const char data, int *crc);
 /* -------------------------------------------------------------------------- */
 /* --- INTERNAL SHARED VARIABLES -------------------------------------------- */
 
-/* Log file */
-extern FILE * log_file;
-
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE FUNCTIONS DEFINITION ----------------------------------------- */
 
@@ -236,7 +233,6 @@ int sx1302_config_gpio(void) {
 /* --- PUBLIC FUNCTIONS DEFINITION ------------------------------------------ */
 
 int sx1302_init(void) {
-    sx1302_model_id_t model_id;
     int x;
 
     /* Initialize internal counter */
@@ -245,7 +241,7 @@ int sx1302_init(void) {
     /* Initialize RX buffer */
     rx_buffer_new(&rx_buffer);
 
-    x = timestamp_counter_mode(false);
+    x = timestamp_counter_mode();
     if (x != LGW_REG_SUCCESS) {
         printf("ERROR: failed to configure timestamp counter mode\n");
         return LGW_REG_ERROR;
@@ -309,32 +305,9 @@ int sx1302_get_model_id(sx1302_model_id_t * model_id) {
 
 int sx1302_update(void) {
     uint32_t inst, pps;
-    /* performances variables */
-    struct timeval tm;
-
-    /* Record function start time */
-    _meas_time_start(&tm);
-
-#if 0 /* Disabled because it brings latency on USB, for low value. TODO: do this less frequently ? */
-    int32_t val;
-
-    /* Check MCUs parity errors */
-    lgw_reg_r(SX1302_REG_AGC_MCU_CTRL_PARITY_ERROR, &val);
-    if (val != 0) {
-        printf("ERROR: Parity error check failed on AGC firmware\n");
-        return LGW_REG_ERROR;
-    }
-    lgw_reg_r(SX1302_REG_ARB_MCU_CTRL_PARITY_ERROR, &val);
-    if (val != 0) {
-        printf("ERROR: Parity error check failed on ARB firmware\n");
-        return LGW_REG_ERROR;
-    }
-#endif
 
     /* Update internal timestamp counter wrapping status */
     timestamp_counter_get(&counter_us, &inst, &pps);
-
-    _meas_time_stop(2, tm, __FUNCTION__);
 
     return LGW_REG_SUCCESS;
 }
@@ -510,7 +483,7 @@ int sx1302_radio_calibrate(struct lgw_conf_rxrf_s * context_rf_chain, uint8_t cl
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-int sx1302_pa_lna_lut_configure(struct lgw_conf_board_s * context_board) {
+int sx1302_pa_lna_lut_configure(void) {
     int err = LGW_REG_SUCCESS;
 
     /* Configure LUT Table A */
@@ -1213,7 +1186,7 @@ int sx1302_agc_mailbox_write(uint8_t mailbox, uint8_t value) {
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 int sx1302_agc_start(uint8_t version, uint8_t ana_gain, uint8_t dec_gain) {
-    uint8_t val;
+    uint8_t val = 0;
     struct agc_gain_params_s agc_params;
     uint8_t pa_start_delay;
     uint8_t fdd_mode = 0;
@@ -1727,7 +1700,7 @@ void sx1302_arb_print_debug_stats(void) {
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 int sx1302_arb_start(uint8_t version) {
-    uint8_t val;
+    uint8_t val = 0;
 
     /* Wait for ARB fw to be started, and VERSION available in debug registers */
     sx1302_arb_wait_status(0x01);
@@ -1764,10 +1737,6 @@ int sx1302_arb_start(uint8_t version) {
 
 int sx1302_fetch(uint8_t * nb_pkt) {
     int err;
-    struct timeval tm;
-
-    /* Record function start time */
-    _meas_time_start(&tm);
 
     /* Fetch packets from sx1302 if no more left in RX buffer */
     if (rx_buffer.buffer_pkt_nb == 0) {
@@ -1791,8 +1760,6 @@ int sx1302_fetch(uint8_t * nb_pkt) {
     /* Return the number of packet fetched */
     *nb_pkt = rx_buffer.buffer_pkt_nb;
 
-    _meas_time_stop(2, tm, __FUNCTION__);
-
     return LGW_REG_SUCCESS;
 }
 
@@ -1808,10 +1775,6 @@ int sx1302_parse(lgw_context_t * context, struct lgw_pkt_rx_s * p) {
     uint8_t cr;
     int32_t timestamp_correction;
     rx_packet_t pkt;
-    struct timeval tm;
-
-    /* Record function start time */
-    _meas_time_start(&tm);
 
     /* Check input params */
     CHECK_NULL(context);
@@ -1867,9 +1830,6 @@ int sx1302_parse(lgw_context_t * context, struct lgw_pkt_rx_s * p) {
                     payload_crc16_calc = sx1302_lora_payload_crc(p->payload, p->size);
                     if (payload_crc16_calc != pkt.rx_crc16_value) {
                         printf("ERROR: Payload CRC16 check failed (got:0x%04X calc:0x%04X)\n", pkt.rx_crc16_value, payload_crc16_calc);
-                        if (log_file != NULL) {
-                            fprintf(log_file, "ERROR: Payload CRC16 check failed (got:0x%04X calc:0x%04X)\n", pkt.rx_crc16_value, payload_crc16_calc);
-                        }
                         return LGW_REG_ERROR;
                     } else {
                         DEBUG_PRINTF("Payload CRC check OK (0x%04X)\n", pkt.rx_crc16_value);
@@ -2025,8 +1985,6 @@ int sx1302_parse(lgw_context_t * context, struct lgw_pkt_rx_s * p) {
     /* Packet CRC status */
     p->crc = pkt.rx_crc16_value;
 
-    _meas_time_stop(2, tm, __FUNCTION__);
-
     return LGW_REG_SUCCESS;
 }
 
@@ -2152,7 +2110,7 @@ uint8_t sx1302_rx_status(uint8_t rf_chain) {
 int sx1302_tx_abort(uint8_t rf_chain) {
     int err;
     uint8_t tx_status = TX_STATUS_UNKNOWN;
-    struct timeval tm_start;
+    int timeout = 1000;
 
     err  = lgw_reg_w(SX1302_REG_TX_TOP_TX_TRIG_TX_TRIG_IMMEDIATE(rf_chain), 0x00);
     err |= lgw_reg_w(SX1302_REG_TX_TOP_TX_TRIG_TX_TRIG_DELAYED(rf_chain), 0x00);
@@ -2162,19 +2120,17 @@ int sx1302_tx_abort(uint8_t rf_chain) {
         return err;
     }
 
-    timeout_start(&tm_start);
     do {
-        /* handle timeout */
-        if (timeout_check(tm_start, 1000) != 0) {
-            printf("ERROR: %s: TIMEOUT on TX abort\n", __FUNCTION__);
-            return LGW_REG_ERROR;
-        }
-
         /* get tx status */
         tx_status = sx1302_tx_status(rf_chain);
         wait_ms(1);
-    } while (tx_status != TX_FREE);
+        timeout--;
+    } while ((tx_status != TX_FREE) && (timeout != 0));
 
+    if (timeout == 0) {
+        printf("ERROR: %s: TIMEOUT on TX abort\n", __FUNCTION__);
+        return LGW_REG_ERROR;
+    }
     return LGW_REG_SUCCESS;
 }
 
@@ -2213,17 +2169,10 @@ int sx1302_send(bool lwan_public, struct lgw_conf_rxif_s * context_fsk, struct l
     uint64_t fsk_sync_word_reg;
     uint16_t mem_addr;
     uint32_t count_us;
-    uint8_t power;
-    uint8_t pow_index;
     uint8_t mod_bw;
     uint16_t tx_start_delay;
     uint8_t chirp_lowpass = 0;
     uint8_t buff[2]; /* for 16-bits register write operation */
-    /* performances variables */
-    struct timeval tm;
-
-    /* Record function start time */
-    _meas_time_start(&tm);
 
     /* Check input parameters */
     CHECK_NULL(pkt_data);
@@ -2264,9 +2213,7 @@ int sx1302_send(bool lwan_public, struct lgw_conf_rxif_s * context_fsk, struct l
     CHECK_ERR(err);
 
     /* Set the power parameters to be used for TX */
-    power = pow_index;
-
-    err = lgw_reg_w(SX1302_REG_TX_TOP_AGC_TX_PWR_AGC_TX_PWR(pkt_data->rf_chain), power);
+    err = lgw_reg_w(SX1302_REG_TX_TOP_AGC_TX_PWR_AGC_TX_PWR(pkt_data->rf_chain), pkt_data->rf_power);
     CHECK_ERR(err);
 
     /* Set digital gain */
@@ -2574,9 +2521,6 @@ int sx1302_send(bool lwan_public, struct lgw_conf_rxif_s * context_fsk, struct l
     /* Setting back to SINGLE BULK write mode */
     err = lgw_com_set_write_mode(LGW_COM_WRITE_MODE_SINGLE);
     CHECK_ERR(err);
-
-    /* Compute time spent in this function */
-    _meas_time_stop(2, tm, __FUNCTION__);
 
     return LGW_REG_SUCCESS;
 }

@@ -16,13 +16,6 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 /* -------------------------------------------------------------------------- */
 /* --- DEPENDANCIES --------------------------------------------------------- */
 
-/* fix an issue between POSIX and C99 */
-#if __STDC_VERSION__ >= 199901L
-    #define _XOPEN_SOURCE 600
-#else
-    #define _XOPEN_SOURCE 500
-#endif
-
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,128 +34,24 @@ License: Revised BSD License, see LICENSE.TXT file include in the project
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE MACROS ------------------------------------------------------- */
 
-#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
-#define RAND_RANGE(min, max) (rand() % (max + 1 - min) + min)
-
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE CONSTANTS ---------------------------------------------------- */
-
-#define DEFAULT_FREQ_HZ     868500000U
-
 
 /* -------------------------------------------------------------------------- */
 /* --- MAIN FUNCTION -------------------------------------------------------- */
 
 int main(void)
 {
-    /* SPI interfaces */
+    /* Port COM */
     const char com_path[] = "COM7";
 
-    int i, j, x;
-    uint8_t max_rx_pkt = 16;
+    int x;
 
-    struct lgw_conf_board_s boardconf;
-    struct lgw_conf_rxrf_s rfconf;
-    struct lgw_conf_rxif_s ifconf;
-
- 
-    unsigned long nb_pkt_crc_ok = 0, nb_loop = 0;
-    int nb_pkt;
-
-    const int32_t channel_if_mode0[9] = {
-        -400000,
-        -200000,
-        0,
-        -400000,
-        -200000,
-        0,
-        200000,
-        400000,
-        -200000 /* lora service */
-    };
-
-    const uint8_t channel_rfchain_mode0[9] = { 1, 1, 1, 0, 0, 0, 0, 0, 1 };
-
-    /* Configure the gateway */
-    memset( &boardconf, 0, sizeof boardconf);
-    boardconf.lorawan_public = true;
-    boardconf.clksrc = 0;
-    strncpy(boardconf.com_path, com_path, sizeof boardconf.com_path);
-    boardconf.com_path[sizeof boardconf.com_path - 1] = '\0'; /* ensure string termination */
-    if (lgw_board_setconf(&boardconf) != LGW_HAL_SUCCESS) {
-        printf("ERROR: failed to configure board\n");
-        return -1;
-    }
-
-    /* set configuration for RF chains */
-    memset( &rfconf, 0, sizeof rfconf);
-    rfconf.enable = true;
-    rfconf.freq_hz = 867500000;
-    rfconf.rssi_offset = -215.4;
-    rfconf.tx_enable = false;
-    rfconf.single_input_mode = false;
-    rfconf.rssi_tcomp.coeff_a = 0;
-    rfconf.rssi_tcomp.coeff_b = 0;
-    rfconf.rssi_tcomp.coeff_c = 20.41;
-    rfconf.rssi_tcomp.coeff_d = 2162.56;
-    rfconf.rssi_tcomp.coeff_e = 0;
-    if (lgw_rxrf_setconf(0, &rfconf) != LGW_HAL_SUCCESS) {
-        printf("ERROR: failed to configure rxrf 0\n");
-        return -1;
-    }
-
-    memset( &rfconf, 0, sizeof rfconf);
-    rfconf.enable = true;
-    rfconf.freq_hz = 868500000;
-    rfconf.rssi_offset = -215.4;
-    rfconf.tx_enable = false;
-    rfconf.single_input_mode = false;
-    rfconf.rssi_tcomp.coeff_a = 0;
-    rfconf.rssi_tcomp.coeff_b = 0;
-    rfconf.rssi_tcomp.coeff_c = 20.41;
-    rfconf.rssi_tcomp.coeff_d = 2162.56;
-    rfconf.rssi_tcomp.coeff_e = 0;
-    if (lgw_rxrf_setconf(1, &rfconf) != LGW_HAL_SUCCESS) {
-        printf("ERROR: failed to configure rxrf 1\n");
-        return -1;
-    }
-
-    /* set configuration for LoRa multi-SF channels (bandwidth cannot be set) */
-    memset(&ifconf, 0, sizeof(ifconf));
-    for (i = 0; i < 8; i++) {
-        ifconf.enable = true;
-        ifconf.rf_chain = channel_rfchain_mode0[i];
-        ifconf.freq_hz = channel_if_mode0[i];
-        ifconf.datarate = DR_LORA_SF7;
-        if (lgw_rxif_setconf(i, &ifconf) != LGW_HAL_SUCCESS) {
-            printf("ERROR: failed to configure rxif %d\n", i);
-            return -1;
-        }
-    }
-
-    /* set configuration for LoRa Service channel */
-    memset(&ifconf, 0, sizeof(ifconf));
-    ifconf.rf_chain = channel_rfchain_mode0[i];
-    ifconf.freq_hz = channel_if_mode0[i];
-    ifconf.datarate = DR_LORA_SF7;
-    ifconf.bandwidth = BW_250KHZ;
-    ifconf.implicit_crc_en = false;
-    ifconf.implicit_coderate = 1;
-    ifconf.implicit_hdr = false;
-    ifconf.implicit_payload_length = 17;
-    if (lgw_rxif_setconf(8, &ifconf) != LGW_HAL_SUCCESS) {
-        printf("ERROR: failed to configure rxif for LoRa service channel\n");
-        return -1;
-    }
-
-    /* set configuration for FSK channel */
-    memset(&ifconf, 0, sizeof(ifconf));
-    ifconf.rf_chain = 1;
-    ifconf.freq_hz = 300000;
-    ifconf.datarate = 50000;
-    if (lgw_rxif_setconf(9, &ifconf) != LGW_HAL_SUCCESS) {
-        printf("ERROR: invalid configuration for FSK channel\n");
-        return -1;
+    x = loragw_default_config(com_path);
+    if (x != LGW_HAL_SUCCESS) {
+        printf("ERROR: failed to configure the concentrator \n");
+    } else {
+        printf("\nINFO: concentrator configuration done");
     }
 
     /* connect, configure and start the LoRa concentrator */
@@ -212,18 +101,20 @@ int main(void)
 
 
     /* set the buffer size to hold received packets */
-    struct lgw_pkt_rx_s rxpkt[max_rx_pkt];
-    nb_pkt_crc_ok = 0;
+    struct lgw_pkt_rx_s rxpkt[16];
+    uint32_t nb_loop = 0;
+    uint32_t nb_pkt = 0;
+    uint32_t nb_pkt_crc_ok = 0;
 
     while ((nb_pkt_crc_ok < 5) && (nb_loop < 500)) {
         /* fetch N packets */
-        nb_pkt = lgw_receive(ARRAY_SIZE(rxpkt), rxpkt);
+        nb_pkt = lgw_receive(16, rxpkt);
 
         if (nb_pkt == 0) {
             wait_ms(100);
             nb_loop++;
         } else {
-            for (i = 0; i < nb_pkt; i++) {
+            for (uint32_t i = 0; i < nb_pkt; i++) {
                 if (rxpkt[i].status == STAT_CRC_OK) {
                     nb_pkt_crc_ok += 1;
                 }
@@ -240,16 +131,16 @@ int main(void)
                 printf("  rssi_chan:%.1f\n", rxpkt[i].rssic);
                 printf("  rssi_sig :%.1f\n", rxpkt[i].rssis);
                 printf("  crc:      0x%04X\n", rxpkt[i].crc);
-                for (j = 0; j < rxpkt[i].size; j++) {
+                for (uint32_t j = 0; j < rxpkt[i].size; j++) {
                     printf("%02X ", rxpkt[i].payload[j]);
                 }
                 printf("\n");
             }
-            printf("Received %d packets (total:%lu)\n", nb_pkt, nb_pkt_crc_ok);
+            printf("Received %d packets (total:%d)\n", nb_pkt, nb_pkt_crc_ok);
         }
     }
 
-    printf( "Nb valid packets received: %lu CRC OK\n", nb_pkt_crc_ok );
+    printf( "Nb valid packets received: %d CRC OK\n", nb_pkt_crc_ok );
 
 
     struct lgw_pkt_tx_s pkt;

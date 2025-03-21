@@ -402,7 +402,7 @@ uint32_t timestamp_pkt_expand(timestamp_counter_t * self, uint32_t pkt_cnt_us) {
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
-int timestamp_counter_mode(bool ftime_enable) {
+int timestamp_counter_mode(void) {
     int x = LGW_REG_SUCCESS;
     /* Latch end-of-packet timestamp (sx1301 compatibility) */
     x |= lgw_reg_w(SX1302_REG_RX_TOP_RX_BUFFER_LEGACY_TIMESTAMP, 0x01);
